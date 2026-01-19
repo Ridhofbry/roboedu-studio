@@ -8,11 +8,11 @@ import {
   Play, CheckCircle2, AlertCircle, FolderOpen, Film, FileVideo, ChevronLeft, 
   LogOut, ShieldCheck, MonitorPlay, Lock, ArrowRight, X, User, Edit2, 
   ExternalLink, Save, Zap, AlertTriangle, Download, Sparkles, Wand2, 
-  Loader2, Copy, Plus, Trash2, Calendar, Grid, Mic, Users, Music, Archive, Layout as LayoutIcon
+  Loader2, Copy, Plus, Trash2, Calendar, Grid, Mic, Users, Music, Archive, BarChart3
 } from 'lucide-react';
 
 /* ========================================================================
-   1. KONFIGURASI (LIVE MODE)
+   KONFIGURASI (LIVE MODE)
    ======================================================================== */
 
 const firebaseConfig = {
@@ -31,7 +31,7 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
 /* ========================================================================
-   2. DATA & STYLING
+   DATA & STYLING
    ======================================================================== */
 
 const TEAMS = [
@@ -99,7 +99,7 @@ const RoboLogo = ({ size = 60 }) => (
 );
 
 /* ========================================================================
-   3. KOMPONEN LAYOUT (FIXED)
+   3. KOMPONEN LAYOUT
    ======================================================================== */
 
 const Layout = ({ children, title, subtitle, showBack, onBack, showAssets, showLogout, setView, setCurrentUser, setLoginStep, setPasswordInput }) => (
@@ -171,7 +171,7 @@ export default function App() {
   const [isEditingProject, setIsEditingProject] = useState(false);
   const [editForm, setEditForm] = useState({ title: '', description: '' });
   const [feedbackInput, setFeedbackInput] = useState('');
-  const [isSaving, setIsSaving] = useState(false); // New Loading State
+  const [isSaving, setIsSaving] = useState(false); 
   
   // AI States
   const [showAIModal, setShowAIModal] = useState(false);
@@ -258,6 +258,18 @@ export default function App() {
     if(activeProject) setEditForm({ title: activeProject.title, description: activeProject.description });
   };
 
+  const handleAddAsset = async () => {
+    if(!newAssetForm.title) return;
+    try {
+        let color = 'bg-gray-100 text-gray-500'; if(newAssetForm.type === 'folder') color = 'bg-blue-100 text-blue-600'; if(newAssetForm.type === 'video') color = 'bg-purple-100 text-purple-600'; if(newAssetForm.type === 'audio') color = 'bg-pink-100 text-pink-600';
+        await addDoc(collection(db, "assets"), { ...newAssetForm, color, createdAt: serverTimestamp() }); 
+        setIsAddingAsset(false); 
+        setNewAssetForm({ title: '', type: 'folder', link: '', size: '' });
+    } catch (e) { alert("Gagal tambah aset: " + e.message); }
+  };
+
+  const handleDeleteAsset = async (id) => { if(confirm("Hapus aset?")) await deleteDoc(doc(db, "assets", id)); };
+
   // --- VIEWS RENDERER ---
 
   // 1. LOGIN VIEW
@@ -316,28 +328,40 @@ export default function App() {
     );
   }
 
-  // --- ARCHIVE VIEW (NEW) ---
+  // --- ARCHIVE VIEW (SEPARATE PAGE) ---
   if (view === 'archive') {
     const isSup = currentUser?.role === 'supervisor';
-    const filterFn = isSup 
-        ? (activeTeamId ? p => p.teamId === activeTeamId : p => true) // If supervisor inside team view, filter by team, else all
-        : p => p.teamId === currentUser.teamId; // If creator, only their team
+    // Filter logic: if supervisor view all, if creator view own team
+    const filterFn = isSup ? (p => true) : (p => p.teamId === currentUser.teamId);
     
     // Sort logic for archive (oldest first or completed)
     const archivedProjects = projects.filter(filterFn).slice(10); // Show projects after the first 10
 
     return (
-      <Layout title="Arsip & Analitik" subtitle="Riwayat Project" showBack onBack={() => setView(isSup ? (activeTeamId ? 'team-projects' : 'team-list') : 'dashboard')}>
+      <Layout title="Arsip & Analitik" subtitle="Data Project Lama" showBack onBack={() => setView(isSup ? 'team-list' : 'dashboard')}>
+         {/* DRIVE CARD */}
          <div onClick={() => window.open(RECAP_DRIVE_LINK, '_blank')} className="bg-gradient-to-r from-purple-600 to-pink-600 rounded-[2rem] p-6 mb-8 text-white shadow-xl flex items-center justify-between cursor-pointer active:scale-95 transition-transform relative overflow-hidden">
              <div className="relative z-10"><h3 className="font-bold text-xl mb-1">Recap Content</h3><p className="text-xs opacity-90">Buka Google Drive Arsip</p></div>
              <div className="w-12 h-12 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center"><Archive size={24} className="text-white"/></div>
          </div>
 
+         {/* ANALYTICS SIMPLE */}
+         <div className="grid grid-cols-2 gap-4 mb-8">
+            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+                <div className="text-slate-400 text-[10px] font-bold uppercase mb-1">Total Project</div>
+                <div className="text-2xl font-black text-slate-800">{projects.length}</div>
+            </div>
+            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+                <div className="text-slate-400 text-[10px] font-bold uppercase mb-1">Selesai</div>
+                <div className="text-2xl font-black text-emerald-600">{projects.filter(p => p.status === 'Approved' || p.status === 'Completed').length}</div>
+            </div>
+         </div>
+
          <h3 className="font-bold text-slate-700 mb-4 px-2">Riwayat Lama ({archivedProjects.length})</h3>
-         {archivedProjects.length === 0 ? <div className="text-center py-10 text-slate-400 text-sm">Belum ada arsip lama.</div> : 
+         {archivedProjects.length === 0 ? <div className="text-center py-10 text-slate-400 text-sm">Belum ada arsip lama (masih {'<'} 10 project).</div> : 
             <div className="space-y-3">
                 {archivedProjects.map(p => (
-                    <div key={p.id} className="bg-white p-4 rounded-2xl border border-slate-100 flex justify-between items-center opacity-70 hover:opacity-100 transition-opacity">
+                    <div key={p.id} className="bg-white p-4 rounded-2xl border border-slate-100 flex justify-between items-center opacity-80 hover:opacity-100 transition-opacity">
                         <div><h4 className="font-bold text-slate-700 text-sm">{p.title}</h4><span className="text-[10px] bg-slate-100 px-2 py-0.5 rounded text-slate-500">{p.status}</span></div>
                         <div className="text-[10px] text-slate-400">{p.createdAt?.toDate().toLocaleDateString('id-ID') || '-'}</div>
                     </div>
@@ -348,10 +372,56 @@ export default function App() {
     )
   }
 
+  // --- ASSETS PAGE ---
+  if (view === 'assets') {
+    const isSup = currentUser?.role === 'supervisor';
+    // Back logic: if supervisor came from team-list, go back there. If creator, go back dashboard.
+    // If supervisor was inside a team detail (activeTeamId set), go back to team-projects.
+    // Simplifying for supervisor: Go back to team-list (Main Dashboard) to avoid complexity blank screen
+    const backView = isSup ? 'team-list' : 'dashboard';
+
+    return (
+      <Layout title="Gudang Aset" subtitle={isSup ? "Mode Pengelola" : "Download File Resmi"} showBack onBack={() => setView(backView)}>
+        <div className="space-y-3">
+            {isSup && isAddingAsset && (
+                <div className="bg-white border-2 border-blue-100 p-4 rounded-3xl mb-4 shadow-lg animate-slide-up">
+                    <h3 className="text-xs font-bold text-blue-600 mb-3 uppercase">Upload File</h3>
+                    <input type="text" placeholder="Nama File" className="w-full p-3 text-xs bg-slate-50 rounded-xl mb-2 outline-none border focus:border-blue-500 transition-all" value={newAssetForm.title} onChange={e => setNewAssetForm({...newAssetForm, title: e.target.value})} />
+                    <div className="flex gap-2 mb-2"><select className="p-3 text-xs bg-slate-50 rounded-xl flex-1 outline-none border" value={newAssetForm.type} onChange={e => setNewAssetForm({...newAssetForm, type: e.target.value})}><option value="folder">Folder</option><option value="video">Video</option><option value="audio">Audio</option></select><input type="text" placeholder="Size" className="w-1/3 p-3 text-xs bg-slate-50 rounded-xl outline-none border" value={newAssetForm.size} onChange={e => setNewAssetForm({...newAssetForm, size: e.target.value})} /></div>
+                    <input type="text" placeholder="Link Google Drive..." className="w-full p-3 text-xs bg-slate-50 rounded-xl mb-4 outline-none border font-mono" value={newAssetForm.link} onChange={e => setNewAssetForm({...newAssetForm, link: e.target.value})} />
+                    <div className="flex gap-2 justify-end"><button onClick={() => setIsAddingAsset(false)} className="px-4 py-2 text-slate-400 text-xs font-bold">Batal</button><button onClick={handleAddAsset} className="px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold">Simpan</button></div>
+                </div>
+            )}
+            {assets.map(asset => (
+                <div key={asset.id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4 hover:shadow-md transition-all">
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${asset.color} text-white`}>
+                        {asset.type === 'folder' && <FolderOpen size={20} />}{asset.type === 'video' && <Film size={20} />}{asset.type === 'audio' && <MonitorPlay size={20} />}
+                    </div>
+                    <div className="flex-1"><h3 className="font-bold text-slate-800 text-sm">{asset.title}</h3><p className="text-[10px] text-slate-400">{asset.size}</p></div>
+                    <a href={asset.link} target="_blank" rel="noreferrer" className="p-2 bg-slate-50 text-blue-600 rounded-full"><ExternalLink size={16} /></a>
+                    {isSup && <button onClick={() => handleDeleteAsset(asset.id)} className="p-2 bg-red-50 text-red-500 rounded-full"><Trash2 size={16} /></button>}
+                </div>
+            ))}
+        </div>
+        {isSup && !isAddingAsset && <div className="fixed bottom-8 right-6 z-40"><button onClick={() => setIsAddingAsset(true)} className="bg-slate-900 text-white p-4 rounded-full shadow-xl hover:scale-110 transition-transform"><Plus size={24} /></button></div>}
+      </Layout>
+    );
+  }
+
   // --- SUPERVISOR VIEWS ---
   if (view === 'team-list' && currentUser?.role === 'supervisor') {
     return (
-      <Layout title="Dashboard" subtitle="Pilih Tim" showLogout showAssets setView={setView} setCurrentUser={setCurrentUser} setLoginStep={setLoginStep} setPasswordInput={setPasswordInput}>
+      <Layout title="Dashboard Supervisor" subtitle="Monitoring Tim" showLogout setView={setView} setCurrentUser={setCurrentUser} setLoginStep={setLoginStep} setPasswordInput={setPasswordInput}>
+        
+        {/* NEW BUTTON: ARSIP & ANALITIK */}
+        <div onClick={() => setView('archive')} className="bg-slate-800 text-white p-5 rounded-[2rem] shadow-lg mb-6 flex items-center justify-between cursor-pointer hover:scale-[1.02] transition-transform">
+            <div className="flex items-center gap-3">
+                <div className="bg-white/10 p-3 rounded-xl"><BarChart3 size={20}/></div>
+                <div><h3 className="font-bold text-lg">Arsip & Analitik</h3><p className="text-xs text-slate-400">Cek Data & History Project</p></div>
+            </div>
+            <ChevronLeft className="rotate-180 text-slate-500"/>
+        </div>
+
         <div className="grid grid-cols-1 gap-4">
           {TEAMS.map((team) => {
             const count = projects.filter(p => p.teamId === team.id).length;
@@ -376,8 +446,7 @@ export default function App() {
     const tm = TEAMS.find(t => t.id === activeTeamId);
     // Limit show 10 latest
     const prj = projects.filter(p => p.teamId === activeTeamId).slice(0, 10);
-    const hasMore = projects.filter(p => p.teamId === activeTeamId).length > 10;
-
+    
     return (
       <Layout title={tm.name} subtitle={tm.members.join(' & ')} showBack onBack={() => setView('team-list')} showAssets setView={setView}>
         {prj.length === 0 ? <div className="text-center py-20 opacity-50"><FolderOpen size={48} className="mx-auto mb-2 text-slate-300"/><p className="text-sm font-bold text-slate-400">Belum ada tugas.</p></div> : 
@@ -390,7 +459,6 @@ export default function App() {
                 </div>
             ))}</div>
         }
-        {hasMore && <button onClick={() => setView('archive')} className="w-full py-3 mt-4 text-xs font-bold text-slate-400 hover:text-slate-600 bg-slate-50 rounded-xl">Lihat Arsip Project Lama</button>}
         
         <button onClick={() => handleAddNewProject(tm.id)} disabled={isSaving} className="fixed bottom-8 right-6 z-50 bg-slate-900 text-white h-14 px-6 rounded-full shadow-2xl flex items-center gap-2 font-bold hover:scale-105 transition-transform">
             {isSaving ? <Loader2 className="animate-spin"/> : <Plus/>} Tugas Baru
@@ -402,9 +470,7 @@ export default function App() {
   // --- CREATOR DASHBOARD ---
   if (view === 'dashboard' && currentUser?.role === 'creator') {
     const tm = TEAMS.find(t => t.id === currentUser.teamId);
-    // Limit 10 latest
     const myProjects = projects.filter(p => p.teamId === currentUser.teamId).slice(0, 10);
-    const hasMore = projects.filter(p => p.teamId === currentUser.teamId).length > 10;
 
     return (
       <Layout title={`Halo, ${currentUser.name}!`} subtitle={tm.members.join(' & ')} showLogout setView={setView} setCurrentUser={setCurrentUser} setLoginStep={setLoginStep} setPasswordInput={setPasswordInput}>
@@ -415,7 +481,6 @@ export default function App() {
         
         <div className="flex justify-between items-end mb-4">
             <h2 className="font-bold text-slate-800 text-lg">Tugas Terbaru</h2>
-            {hasMore && <button onClick={() => setView('archive')} className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full">Arsip</button>}
         </div>
 
         {myProjects.length === 0 ? <div className="text-center py-10 border-2 border-dashed border-slate-200 rounded-3xl"><p className="text-sm text-slate-400 font-bold">Belum ada tugas.</p></div> : 
@@ -427,37 +492,6 @@ export default function App() {
               </div>
            ))}</div>
         }
-      </Layout>
-    );
-  }
-
-  // --- ASSETS ---
-  if (view === 'assets') {
-    const isSup = currentUser?.role === 'supervisor';
-    return (
-      <Layout title="Gudang Aset" subtitle={isSup ? "Mode Edit" : "Download Area"} showBack onBack={() => setView(isSup ? 'team-projects' : 'dashboard')}>
-        <div className="space-y-3">
-            {isSup && isAddingAsset && (
-                <div className="bg-white border-2 border-blue-100 p-4 rounded-3xl mb-4 shadow-lg animate-slide-up">
-                    <h3 className="text-xs font-bold text-blue-600 mb-3 uppercase">Upload File</h3>
-                    <input type="text" placeholder="Nama File" className="w-full p-3 text-xs bg-slate-50 rounded-xl mb-2 outline-none" value={newAssetForm.title} onChange={e => setNewAssetForm({...newAssetForm, title: e.target.value})} />
-                    <div className="flex gap-2 mb-2"><select className="p-3 text-xs bg-slate-50 rounded-xl flex-1 outline-none" value={newAssetForm.type} onChange={e => setNewAssetForm({...newAssetForm, type: e.target.value})}><option value="folder">Folder</option><option value="video">Video</option><option value="audio">Audio</option></select><input type="text" placeholder="Size" className="w-1/3 p-3 text-xs bg-slate-50 rounded-xl outline-none" value={newAssetForm.size} onChange={e => setNewAssetForm({...newAssetForm, size: e.target.value})} /></div>
-                    <input type="text" placeholder="Link Google Drive..." className="w-full p-3 text-xs bg-slate-50 rounded-xl mb-4 outline-none font-mono" value={newAssetForm.link} onChange={e => setNewAssetForm({...newAssetForm, link: e.target.value})} />
-                    <div className="flex gap-2 justify-end"><button onClick={() => setIsAddingAsset(false)} className="px-4 py-2 text-slate-400 text-xs font-bold">Batal</button><button onClick={handleAddAsset} className="px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold">Simpan</button></div>
-                </div>
-            )}
-            {assets.map(asset => (
-                <div key={asset.id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4 hover:shadow-md transition-all">
-                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${asset.color} text-white`}>
-                        {asset.type === 'folder' && <FolderOpen size={20} />}{asset.type === 'video' && <Film size={20} />}{asset.type === 'audio' && <MonitorPlay size={20} />}
-                    </div>
-                    <div className="flex-1"><h3 className="font-bold text-slate-800 text-sm">{asset.title}</h3><p className="text-[10px] text-slate-400">{asset.size}</p></div>
-                    <a href={asset.link} target="_blank" rel="noreferrer" className="p-2 bg-slate-50 text-blue-600 rounded-full"><ExternalLink size={16} /></a>
-                    {isSup && <button onClick={() => handleDeleteAsset(asset.id)} className="p-2 bg-red-50 text-red-500 rounded-full"><Trash2 size={16} /></button>}
-                </div>
-            ))}
-        </div>
-        {isSup && !isAddingAsset && <div className="fixed bottom-8 right-6 z-40"><button onClick={() => setIsAddingAsset(true)} className="bg-slate-900 text-white p-4 rounded-full shadow-xl hover:scale-110 transition-transform"><Plus size={24} /></button></div>}
       </Layout>
     );
   }
@@ -491,9 +525,7 @@ export default function App() {
         <div className="relative pb-10 pl-4">
            <div className="absolute left-[34px] top-4 bottom-0 w-1 bg-slate-200 rounded-full"></div> 
            {WORKFLOW_STEPS.map((step, index) => {
-             // Logic Locked: Jika step sebelumnya belum beres
              const isLocked = index > 0 && !WORKFLOW_STEPS[index-1].tasks.every(t => activeProject.completedTasks.includes(t.id));
-             // Final locked: hanya jika belum diapprove supervisor
              const isFinalLocked = index === 4 && !activeProject.isApproved;
              const locked = isLocked || isFinalLocked;
              
@@ -505,7 +537,6 @@ export default function App() {
                     {step.tasks.map(t => {
                         const checked = activeProject.completedTasks.includes(t.id);
                         
-                        // Khusus Upload Preview 480p di Step 4 (Post-Pro)
                         if(t.id === 't4-4') return (
                            <div key={t.id} className={`p-4 ${step.bg} rounded-xl m-1`}>
                               <div className={`flex items-center gap-2 mb-2 text-xs font-black ${step.text}`}>LINK PREVIEW (480p)</div>
@@ -514,7 +545,6 @@ export default function App() {
                            </div>
                         )
                         
-                        // Khusus Link Final di Step 5
                         if(t.id === 't5-2') return (
                            <div key={t.id} className={`p-4 bg-emerald-50 rounded-xl m-1`}>
                               <div className={`flex items-center gap-2 mb-2 text-xs font-black text-emerald-700`}>LINK FINAL (DRIVE)</div>
@@ -531,13 +561,11 @@ export default function App() {
                         )
                     })}
                     
-                    {/* Gatekeeper dipindah ke Step 4 (Post-Pro) */}
                     {step.isGatekeeper && !locked && (
                         <div className="mt-2 p-4 bg-orange-50 border-t-2 border-orange-100 rounded-b-xl">
                            <div className="flex gap-2 mb-2 items-center"><ShieldCheck size={14} className="text-orange-500"/><h4 className="text-[10px] font-black text-orange-600 uppercase tracking-widest">SUPERVISOR CHECK</h4></div>
                            {activeProject.isApproved ? <div className="bg-emerald-100 text-emerald-700 text-xs p-3 rounded-xl font-black text-center shadow-sm">✅ DISETUJUI</div> : <p className="text-xs text-slate-400 font-medium mb-2 pl-6">Menunggu review...</p>}
                            
-                           {/* HANYA SUPERVISOR BISA LIHAT TOMBOL REVISI */}
                            {isSup && !activeProject.isApproved && activeProject.previewLink && (
                                <div><textarea className="w-full p-3 text-xs bg-white rounded-xl mb-2 outline-none border border-orange-100 font-medium" rows="2" placeholder="Catatan revisi..." value={feedbackInput} onChange={e => setFeedbackInput(e.target.value)}></textarea><div className="flex gap-2"><button onClick={() => {handleUpdateProject(activeProject.id, {isApproved:false,status:'Revision Needed',feedback:feedbackInput});setFeedbackInput('')}} className="flex-1 py-3 bg-white text-orange-600 font-bold text-xs rounded-xl border border-orange-200 hover:bg-orange-50">Minta Revisi</button><button onClick={() => handleUpdateProject(activeProject.id, {isApproved:true,status:'Approved',feedback:''})} className="flex-1 py-3 bg-orange-500 text-white font-bold text-xs rounded-xl shadow-lg hover:scale-105 transition-transform">Approve</button></div></div>
                            )}
