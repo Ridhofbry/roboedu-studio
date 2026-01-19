@@ -8,7 +8,7 @@ import {
   Play, CheckCircle2, AlertCircle, FolderOpen, Film, FileVideo, ChevronLeft, 
   LogOut, ShieldCheck, MonitorPlay, Lock, ArrowRight, X, User, Edit2, 
   ExternalLink, Save, Zap, AlertTriangle, Download, Sparkles, Wand2, 
-  Loader2, Copy, Plus, Trash2, Calendar, Grid, Mic, Users, Music, Archive, BarChart3
+  Loader2, Copy, Plus, Trash2, Calendar, Grid, Mic, Users, Music, Archive, BarChart3, Send
 } from 'lucide-react';
 
 /* ========================================================================
@@ -208,9 +208,31 @@ export default function App() {
     
     if (isStep4Done && proj.previewLink && !proj.isApproved) status = 'Waiting Review';
     if (proj.isApproved) status = 'Approved'; 
-    if (prog === 100) status = 'Completed'; 
+    // Status 'Completed' is now set via Submit Button in Step 5
 
     handleUpdateProject(projId, { completedTasks: newCompleted, progress: prog, status });
+  };
+
+  // FUNGSI SUBMIT FINAL BARU
+  const handleSubmitProject = async () => {
+    if(!activeProject.finalLink) {
+        alert("Mohon isi Link Final (Drive) terlebih dahulu!");
+        return;
+    }
+    if (confirm("Submit project ini? Setelah submit, project akan masuk ke arsip.")) {
+        // Centang otomatis tugas upload link (t5-2) jika belum
+        const newTasks = !activeProject.completedTasks.includes('t5-2') ? [...activeProject.completedTasks, 't5-2'] : activeProject.completedTasks;
+        
+        await handleUpdateProject(activeProject.id, { 
+            status: 'Completed', 
+            progress: 100,
+            completedTasks: newTasks,
+            completedAt: serverTimestamp()
+        });
+        
+        // Pindah view karena project active hilang
+        setView(currentUser?.role === 'supervisor' ? 'team-projects' : 'dashboard');
+    }
   };
 
   const handleScript = async () => {
@@ -299,12 +321,9 @@ export default function App() {
   // ARCHIVE
   if (view === 'archive') {
     const isSup = currentUser?.role === 'supervisor';
-    // Archive logic: Only show 'Completed' projects OR non-completed but old projects (if list > 10)
-    // Filter active projects first to determine "old" ones
+    // Archive logic
     const allMyProjects = isSup ? projects : projects.filter(p => p.teamId === currentUser.teamId);
-    // Projects that are explicitly completed
     const completedProjects = allMyProjects.filter(p => p.status === 'Completed');
-    // Projects that are active but overflow (older than top 10)
     const activeProjects = allMyProjects.filter(p => p.status !== 'Completed');
     const oldActiveProjects = activeProjects.slice(10); 
     
@@ -334,7 +353,10 @@ export default function App() {
                 {archivedDisplay.map(p => (
                     <div key={p.id} className="bg-white p-4 rounded-2xl border border-slate-100 flex justify-between items-center opacity-80 hover:opacity-100 transition-opacity">
                         <div><h4 className="font-bold text-slate-700 text-sm">{p.title}</h4><span className={`text-[10px] px-2 py-0.5 rounded ${p.status === 'Completed' ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>{p.status}</span></div>
-                        <div className="text-[10px] text-slate-400">{p.createdAt?.toDate().toLocaleDateString('id-ID') || '-'}</div>
+                        <div className="flex gap-2 items-center">
+                            <div className="text-[10px] text-slate-400">{p.createdAt?.toDate().toLocaleDateString('id-ID') || '-'}</div>
+                            <button onClick={() => handleDeleteProject(p.id)} className="p-2 bg-red-50 rounded-full text-red-500 hover:bg-red-100 transition-colors" title="Hapus"><Trash2 size={14} /></button>
+                        </div>
                     </div>
                 ))}
             </div>
@@ -346,7 +368,7 @@ export default function App() {
   // ASSETS
   if (view === 'assets') {
     const isSup = currentUser?.role === 'supervisor';
-    const backView = isSup ? 'team-list' : 'dashboard'; // Fix blank screen for supervisor
+    const backView = isSup ? 'team-list' : 'dashboard'; 
 
     return (
       <Layout title="Gudang Aset" subtitle={isSup ? "Mode Pengelola" : "Download File Resmi"} showBack onBack={() => setView(backView)}>
@@ -521,21 +543,31 @@ export default function App() {
                            </div>
                         )
                         
+                        // REVISI TOMBOL SUBMIT FINAL
                         if(t.id === 't5-2') return (
                            <div key={t.id} className={`p-4 bg-emerald-50 rounded-xl m-1`}>
                               <div className={`flex items-center gap-2 mb-2 text-xs font-black text-emerald-700`}>LINK FINAL (DRIVE)</div>
-                              {!isSup && <input type="text" className="w-full text-xs p-3 bg-white rounded-lg outline-none font-medium shadow-sm" placeholder="Paste link..." onBlur={e => {
-                                  const val = e.target.value;
-                                  if(val) {
-                                      // AUTO COMPLETE LOGIC
-                                      const newTasks = !activeProject.completedTasks.includes('t5-2') ? [...activeProject.completedTasks, 't5-2'] : activeProject.completedTasks;
-                                      const total = WORKFLOW_STEPS.reduce((a, s) => a + s.tasks.length, 0);
-                                      const prog = Math.round((newTasks.length / total) * 100);
-                                      // JIKA 100%, STATUS JADI COMPLETED
-                                      const newStatus = prog === 100 ? 'Completed' : activeProject.status;
-                                      handleUpdateProject(activeProject.id, { finalLink: val, completedTasks: newTasks, progress: prog, status: newStatus });
-                                  }
-                              }} />}
+                              {!isSup && activeProject.status !== 'Completed' && (
+                                <div className="space-y-2">
+                                    <input type="text" className="w-full text-xs p-3 bg-white rounded-lg outline-none font-medium shadow-sm" placeholder="Paste link..." onBlur={e => {
+                                        const val = e.target.value;
+                                        // Hanya simpan link, jangan complete dulu
+                                        handleUpdateProject(activeProject.id, { finalLink: val });
+                                    }} defaultValue={activeProject.finalLink} />
+                                    
+                                    {/* TOMBOL SUBMIT MUNCUL JIKA LINK TERISI */}
+                                    {activeProject.finalLink && (
+                                        <button onClick={handleSubmitProject} className="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold text-xs shadow-lg hover:scale-105 transition-transform flex items-center justify-center gap-2">
+                                            <Send size={14}/> KIRIM / SUBMIT PROJECT
+                                        </button>
+                                    )}
+                                </div>
+                              )}
+                              
+                              {/* JIKA SUDAH COMPLETED/SUPERVISOR */}
+                              {(isSup || activeProject.status === 'Completed') && activeProject.finalLink && (
+                                  <a href={activeProject.finalLink} target="_blank" className="block text-center w-full py-3 bg-white text-emerald-700 rounded-lg text-xs font-bold shadow-sm">Buka Link Final</a>
+                              )}
                            </div>
                         )
 
