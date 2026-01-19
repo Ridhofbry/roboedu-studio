@@ -355,7 +355,10 @@ export default function App() {
                         <div><h4 className="font-bold text-slate-700 text-sm">{p.title}</h4><span className={`text-[10px] px-2 py-0.5 rounded ${p.status === 'Completed' ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>{p.status}</span></div>
                         <div className="flex gap-2 items-center">
                             <div className="text-[10px] text-slate-400">{p.createdAt?.toDate().toLocaleDateString('id-ID') || '-'}</div>
-                            <button onClick={() => handleDeleteProject(p.id)} className="p-2 bg-red-50 rounded-full text-red-500 hover:bg-red-100 transition-colors" title="Hapus"><Trash2 size={14} /></button>
+                            {/* HANYA SUPERVISOR BISA HAPUS */}
+                            {isSup && (
+                                <button onClick={() => handleDeleteProject(p.id)} className="p-2 bg-red-50 rounded-full text-red-500 hover:bg-red-100 transition-colors" title="Hapus"><Trash2 size={14} /></button>
+                            )}
                         </div>
                     </div>
                 ))}
