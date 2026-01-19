@@ -16,15 +16,14 @@ import {
    ======================================================================== */
 
 const firebaseConfig = {
-  apiKey: "AIzaSyBt2lZIbFHsiQB9TMsR3kxTBuXUVzTrLuA",
-  authDomain: "rfx-femmora-web.firebaseapp.com",
-  projectId: "rfx-femmora-web",
-  storageBucket: "rfx-femmora-web.firebasestorage.app",
-  messagingSenderId: "236566835727",
-  appId: "1:236566835727:web:1101f1c7a7af4ddf74297a"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
-
-const GEMINI_API_KEY = "AIzaSyDRYrv6YGnT0NPA3b8N9ZLtJMF1xKZCDwg";
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
 // Inisialisasi Firebase
 const app = initializeApp(firebaseConfig);
