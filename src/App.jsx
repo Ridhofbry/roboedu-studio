@@ -8,7 +8,7 @@ import {
   Play, CheckCircle2, AlertCircle, FolderOpen, Film, FileVideo, ChevronLeft, 
   LogOut, ShieldCheck, MonitorPlay, Lock, ArrowRight, X, User, Edit2, 
   ExternalLink, Save, Zap, AlertTriangle, Download, Sparkles, Wand2, 
-  Loader2, Copy, Plus, Trash2, Calendar, Grid, Mic, Users, Music, Archive, BarChart3, Send
+  Loader2, Copy, Plus, Trash2, Calendar, Grid, Mic, Users, Music, Archive, BarChart3, Send, Link as LinkIcon
 } from 'lucide-react';
 
 /* ========================================================================
@@ -208,29 +208,24 @@ export default function App() {
     
     if (isStep4Done && proj.previewLink && !proj.isApproved) status = 'Waiting Review';
     if (proj.isApproved) status = 'Approved'; 
-    // Status 'Completed' is now set via Submit Button in Step 5
+    if (prog === 100) status = 'Completed'; 
 
     handleUpdateProject(projId, { completedTasks: newCompleted, progress: prog, status });
   };
 
-  // FUNGSI SUBMIT FINAL BARU
   const handleSubmitProject = async () => {
     if(!activeProject.finalLink) {
         alert("Mohon isi Link Final (Drive) terlebih dahulu!");
         return;
     }
     if (confirm("Submit project ini? Setelah submit, project akan masuk ke arsip.")) {
-        // Centang otomatis tugas upload link (t5-2) jika belum
         const newTasks = !activeProject.completedTasks.includes('t5-2') ? [...activeProject.completedTasks, 't5-2'] : activeProject.completedTasks;
-        
         await handleUpdateProject(activeProject.id, { 
             status: 'Completed', 
             progress: 100,
             completedTasks: newTasks,
             completedAt: serverTimestamp()
         });
-        
-        // Pindah view karena project active hilang
         setView(currentUser?.role === 'supervisor' ? 'team-projects' : 'dashboard');
     }
   };
@@ -318,19 +313,70 @@ export default function App() {
     );
   }
 
+  // --- NEW: SUPERVISOR RESULTS PAGE ---
+  if (view === 'results' && currentUser?.role === 'supervisor') {
+    return (
+      <Layout title="Link Hasil Project" subtitle="Final Submission Drive" showBack onBack={() => setView('team-list')}>
+         {/* Loop through teams to categorize */}
+         {TEAMS.map(team => {
+            // Get projects that have finalLink (submitted)
+            const teamResults = projects.filter(p => p.teamId === team.id && p.finalLink);
+            
+            // Skip rendering team section if no results
+            if (teamResults.length === 0) return null;
+
+            return (
+               <div key={team.id} className="mb-8 animate-[slideUp_0.3s_ease-out]">
+                  <div className="flex items-center gap-3 mb-4">
+                     <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold shadow-md">
+                        {team.name.split(' ')[1]}
+                     </div>
+                     <h3 className="font-bold text-slate-700 text-lg">{team.name}</h3>
+                  </div>
+                  
+                  <div className="space-y-3">
+                     {teamResults.map(p => (
+                        <div key={p.id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex flex-col gap-3 group hover:border-indigo-200 transition-colors">
+                           <div>
+                              <div className="flex justify-between items-start">
+                                 <h4 className="font-bold text-slate-800 text-sm leading-tight">{p.title}</h4>
+                                 <span className="text-[10px] bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded font-bold">Selesai</span>
+                              </div>
+                              <p className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
+                                 <Calendar size={10}/> {p.completedAt?.toDate().toLocaleDateString('id-ID') || 'Baru saja'}
+                              </p>
+                           </div>
+                           <a href={p.finalLink} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 w-full py-3 bg-indigo-50 text-indigo-600 rounded-xl text-xs font-bold hover:bg-indigo-600 hover:text-white transition-all border border-indigo-100 group-hover:border-indigo-200">
+                              <ExternalLink size={14} /> Buka Google Drive
+                           </a>
+                        </div>
+                     ))}
+                  </div>
+               </div>
+            )
+         })}
+
+         {projects.filter(p => p.finalLink).length === 0 && (
+            <div className="text-center py-20 opacity-50">
+               <FolderOpen size={48} className="mx-auto mb-2 text-slate-300"/>
+               <p className="text-sm font-bold text-slate-400">Belum ada submission project.</p>
+            </div>
+         )}
+      </Layout>
+    );
+  }
+
   // ARCHIVE
   if (view === 'archive') {
     const isSup = currentUser?.role === 'supervisor';
-    // Archive logic
     const allMyProjects = isSup ? projects : projects.filter(p => p.teamId === currentUser.teamId);
     const completedProjects = allMyProjects.filter(p => p.status === 'Completed');
     const activeProjects = allMyProjects.filter(p => p.status !== 'Completed');
     const oldActiveProjects = activeProjects.slice(10); 
-    
     const archivedDisplay = [...completedProjects, ...oldActiveProjects];
 
     return (
-      <Layout title="Arsip & Analitik" subtitle="Data Project Selesai" showBack onBack={() => setView(isSup ? 'team-list' : 'dashboard')}>
+      <Layout title="Arsip & Analistik" subtitle="Data Project Selesai" showBack onBack={() => setView(isSup ? 'team-list' : 'dashboard')}>
          <div onClick={() => window.open(RECAP_DRIVE_LINK, '_blank')} className="bg-gradient-to-r from-purple-600 to-pink-600 rounded-[2rem] p-6 mb-8 text-white shadow-xl flex items-center justify-between cursor-pointer active:scale-95 transition-transform relative overflow-hidden">
              <div className="relative z-10"><h3 className="font-bold text-xl mb-1">Recap Content</h3><p className="text-xs opacity-90">Buka Google Drive Arsip</p></div>
              <div className="w-12 h-12 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center"><Archive size={24} className="text-white"/></div>
@@ -355,7 +401,6 @@ export default function App() {
                         <div><h4 className="font-bold text-slate-700 text-sm">{p.title}</h4><span className={`text-[10px] px-2 py-0.5 rounded ${p.status === 'Completed' ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>{p.status}</span></div>
                         <div className="flex gap-2 items-center">
                             <div className="text-[10px] text-slate-400">{p.createdAt?.toDate().toLocaleDateString('id-ID') || '-'}</div>
-                            {/* HANYA SUPERVISOR BISA HAPUS */}
                             {isSup && (
                                 <button onClick={() => handleDeleteProject(p.id)} className="p-2 bg-red-50 rounded-full text-red-500 hover:bg-red-100 transition-colors" title="Hapus"><Trash2 size={14} /></button>
                             )}
@@ -406,14 +451,22 @@ export default function App() {
     return (
       <Layout title="Dashboard Supervisor" subtitle="Monitoring Tim" showLogout setView={setView} setCurrentUser={setCurrentUser} setLoginStep={setLoginStep} setPasswordInput={setPasswordInput}>
         
-        <div onClick={() => setView('archive')} className="bg-slate-800 text-white p-5 rounded-[2rem] shadow-lg mb-6 flex items-center justify-between cursor-pointer hover:scale-[1.02] transition-transform">
-            <div className="flex items-center gap-3">
-                <div className="bg-white/10 p-3 rounded-xl"><BarChart3 size={20}/></div>
-                <div><h3 className="font-bold text-lg">Arsip & Analitik</h3><p className="text-xs text-slate-400">Cek Data & History Project</p></div>
+        {/* MENU GRID */}
+        <div className="grid grid-cols-2 gap-4 mb-6">
+            <div onClick={() => setView('results')} className="bg-gradient-to-br from-indigo-600 to-violet-600 text-white p-5 rounded-[2rem] shadow-lg flex flex-col justify-between cursor-pointer hover:scale-[1.02] transition-transform h-32 relative overflow-hidden group">
+                <div className="absolute top-0 right-0 w-20 h-20 bg-white opacity-10 rounded-bl-full group-hover:scale-110 transition-transform"></div>
+                <div className="bg-white/20 w-10 h-10 rounded-xl flex items-center justify-center backdrop-blur-sm"><LinkIcon size={20}/></div>
+                <div><h3 className="font-bold text-sm leading-tight">Link Hasil</h3><p className="text-[10px] opacity-80">Final Drive</p></div>
             </div>
-            <ChevronLeft className="rotate-180 text-slate-500"/>
+
+            <div onClick={() => setView('archive')} className="bg-slate-800 text-white p-5 rounded-[2rem] shadow-lg flex flex-col justify-between cursor-pointer hover:scale-[1.02] transition-transform h-32 relative overflow-hidden group">
+                <div className="absolute top-0 right-0 w-20 h-20 bg-white opacity-5 rounded-bl-full group-hover:scale-110 transition-transform"></div>
+                <div className="bg-white/10 w-10 h-10 rounded-xl flex items-center justify-center backdrop-blur-sm"><BarChart3 size={20}/></div>
+                <div><h3 className="font-bold text-sm leading-tight">Arsip</h3><p className="text-[10px] opacity-80">History Data</p></div>
+            </div>
         </div>
 
+        <h3 className="font-bold text-slate-700 mb-3 px-1">Daftar Tim</h3>
         <div className="grid grid-cols-1 gap-4">
           {TEAMS.map((team) => {
             // Count active only
