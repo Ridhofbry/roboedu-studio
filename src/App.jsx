@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 
 /* ========================================================================
-   KONFIGURASI (LIVE MODE)
+   1. KONFIGURASI
    ======================================================================== */
 
 const firebaseConfig = {
@@ -31,7 +31,7 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
 /* ========================================================================
-   DATA & STYLING
+   2. DATA & STYLING
    ======================================================================== */
 
 const TEAMS = [
@@ -69,7 +69,6 @@ const WORKFLOW_STEPS = [
   }
 ];
 
-// CSS Animations
 const globalStyles = `
   @keyframes float { 0% { transform: translateY(0px); } 50% { transform: translateY(-6px); } 100% { transform: translateY(0px); } }
   @keyframes blob { 0% { transform: translate(0px, 0px) scale(1); } 33% { transform: translate(30px, -50px) scale(1.1); } 66% { transform: translate(-20px, 20px) scale(0.9); } 100% { transform: translate(0px, 0px) scale(1); } }
@@ -80,21 +79,13 @@ const globalStyles = `
   .glass-card-hover:hover { background: rgba(255, 255, 255, 0.9); transform: translateY(-2px); box-shadow: 0 10px 40px -10px rgba(0,0,0,0.1); }
 `;
 
-// Komponen Robot Maskot
 const RoboLogo = ({ size = 60 }) => (
   <svg width={size} height={size} viewBox="0 0 100 100" className="overflow-visible drop-shadow-xl">
-    <g className="animate-[float_3s_ease-in-out_infinite] origin-bottom">
-      <line x1="50" y1="10" x2="50" y2="30" stroke="#4f46e5" strokeWidth="4" strokeLinecap="round" />
-      <circle cx="50" cy="10" r="6" fill="#f43f5e" className="animate-pulse" />
-    </g>
+    <g className="animate-[float_3s_ease-in-out_infinite] origin-bottom"><line x1="50" y1="10" x2="50" y2="30" stroke="#4f46e5" strokeWidth="4" strokeLinecap="round" /><circle cx="50" cy="10" r="6" fill="#f43f5e" className="animate-pulse" /></g>
     <rect x="20" y="30" width="60" height="50" rx="14" fill="white" stroke="#4f46e5" strokeWidth="4" />
     <rect x="26" y="36" width="48" height="38" rx="8" fill="#e0e7ff" />
-    <g className="origin-center" style={{ transformOrigin: "50% 55%" }}>
-      <circle cx="38" cy="52" r="5" fill="#1e1b4b" className="animate-[blink_4s_infinite]" />
-      <circle cx="62" cy="52" r="5" fill="#1e1b4b" className="animate-[blink_4s_infinite]" />
-    </g>
-    <path d="M15 55 L20 55" stroke="#4f46e5" strokeWidth="4" strokeLinecap="round" />
-    <path d="M80 55 L85 55" stroke="#4f46e5" strokeWidth="4" strokeLinecap="round" />
+    <g className="origin-center" style={{ transformOrigin: "50% 55%" }}><circle cx="38" cy="52" r="5" fill="#1e1b4b" className="animate-[blink_4s_infinite]" /><circle cx="62" cy="52" r="5" fill="#1e1b4b" className="animate-[blink_4s_infinite]" /></g>
+    <path d="M15 55 L20 55" stroke="#4f46e5" strokeWidth="4" strokeLinecap="round" /><path d="M80 55 L85 55" stroke="#4f46e5" strokeWidth="4" strokeLinecap="round" />
   </svg>
 );
 
@@ -105,19 +96,14 @@ const RoboLogo = ({ size = 60 }) => (
 const Layout = ({ children, title, subtitle, showBack, onBack, showAssets, showLogout, setView, setCurrentUser, setLoginStep, setPasswordInput }) => (
   <div className="min-h-screen bg-[#F8FAFC] font-sans text-slate-800 max-w-md mx-auto shadow-2xl relative overflow-hidden flex flex-col">
       <style>{globalStyles}</style>
-      
-      {/* Dynamic Background Elements */}
       <div className="absolute top-0 -left-4 w-72 h-72 bg-purple-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob"></div>
       <div className="absolute top-0 -right-4 w-72 h-72 bg-yellow-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-2000"></div>
       <div className="absolute -bottom-8 left-20 w-72 h-72 bg-pink-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-4000"></div>
 
-      {/* Glass Header */}
       <div className="glass-panel px-6 py-5 sticky top-0 z-40 flex justify-between items-center transition-all shadow-sm">
            <div className="flex items-center gap-3 overflow-hidden">
               {showBack && (
-                <button onClick={onBack} className="w-10 h-10 rounded-full bg-white/80 flex items-center justify-center hover:bg-white shadow-sm border border-slate-100 active:scale-90 transition-all shrink-0">
-                  <ChevronLeft size={20} className="text-slate-600" />
-                </button>
+                <button onClick={onBack} className="w-10 h-10 rounded-full bg-white/80 flex items-center justify-center hover:bg-white shadow-sm border border-slate-100 active:scale-90 transition-all shrink-0"><ChevronLeft size={20} className="text-slate-600" /></button>
               )}
               <div className="flex-1 min-w-0">
                 <h1 className="text-xl font-black text-slate-800 leading-none tracking-tight truncate">{title}</h1>
@@ -126,22 +112,14 @@ const Layout = ({ children, title, subtitle, showBack, onBack, showAssets, showL
            </div>
            <div className="flex gap-2 shrink-0">
               {showAssets && (
-                <button onClick={() => setView('assets')} className="w-10 h-10 bg-white/80 border border-slate-100 text-blue-600 rounded-full hover:bg-blue-50 shadow-sm transition-all hover:rotate-12 flex items-center justify-center">
-                  <FolderOpen size={20} />
-                </button>
+                <button onClick={() => setView('assets')} className="w-10 h-10 bg-white/80 border border-slate-100 text-blue-600 rounded-full hover:bg-blue-50 shadow-sm transition-all hover:rotate-12 flex items-center justify-center"><FolderOpen size={20} /></button>
               )}
               {showLogout && (
-                <button onClick={() => { setCurrentUser(null); setView('login'); setLoginStep('role-select'); setPasswordInput(''); }} className="w-10 h-10 bg-white/80 border border-red-100 text-red-500 rounded-full hover:bg-red-50 shadow-sm transition-all hover:scale-110 flex items-center justify-center">
-                  <LogOut size={20} />
-                </button>
+                <button onClick={() => { setCurrentUser(null); setView('login'); setLoginStep('role-select'); setPasswordInput(''); }} className="w-10 h-10 bg-white/80 border border-red-100 text-red-500 rounded-full hover:bg-red-50 shadow-sm transition-all hover:scale-110 flex items-center justify-center"><LogOut size={20} /></button>
               )}
            </div>
       </div>
-
-      {/* Content Area */}
-      <div className="flex-1 overflow-y-auto p-6 pb-32 relative z-10 custom-scrollbar">
-        {children}
-      </div>
+      <div className="flex-1 overflow-y-auto p-6 pb-32 relative z-10 custom-scrollbar">{children}</div>
   </div>
 );
 
@@ -154,18 +132,15 @@ export default function App() {
   const [projects, setProjects] = useState([]);
   const [assets, setAssets] = useState([]);
   
-  // UI States
   const [view, setView] = useState('login'); 
   const [activeProject, setActiveProject] = useState(null);
   const [activeTeamId, setActiveTeamId] = useState(null);
   
-  // Auth States
   const [loginStep, setLoginStep] = useState('role-select'); 
   const [selectedRole, setSelectedRole] = useState(null);
   const [passwordInput, setPasswordInput] = useState('');
   const [loginError, setLoginError] = useState('');
   
-  // Form States
   const [newAssetForm, setNewAssetForm] = useState({ title: '', type: 'folder', link: '', size: '' });
   const [isAddingAsset, setIsAddingAsset] = useState(false);
   const [isEditingProject, setIsEditingProject] = useState(false);
@@ -173,13 +148,11 @@ export default function App() {
   const [feedbackInput, setFeedbackInput] = useState('');
   const [isSaving, setIsSaving] = useState(false); 
   
-  // AI States
   const [showAIModal, setShowAIModal] = useState(false);
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiResult, setAiResult] = useState('');
   const [isAILoading, setIsAILoading] = useState(false);
 
-  // --- FIREBASE SYNC ---
   useEffect(() => {
     const unsubP = onSnapshot(query(collection(db, "projects"), orderBy("createdAt", "desc")), s => 
       setProjects(s.docs.map(d => ({ id: d.id, ...d.data() })))
@@ -190,7 +163,6 @@ export default function App() {
     return () => { unsubP(); unsubA(); };
   }, []);
 
-  // --- LOGIC FUNCTIONS ---
   const handleAddNewProject = async (teamId) => {
     try {
       setIsSaving(true);
@@ -231,14 +203,12 @@ export default function App() {
     const total = WORKFLOW_STEPS.reduce((a, s) => a + s.tasks.length, 0);
     const prog = Math.round((newCompleted.length / total) * 100);
     
-    // Logic Status Update Flowchart Revisi
     let status = proj.status;
     const isStep4Done = WORKFLOW_STEPS[3].tasks.map(t => t.id).every(id => newCompleted.includes(id));
     
-    // Jika Step 4 (Post-Pro) selesai & ada link preview & belum diapprove -> Waiting Review
     if (isStep4Done && proj.previewLink && !proj.isApproved) status = 'Waiting Review';
-    if (proj.isApproved) status = 'Approved'; // Kalau sudah diapprove supervisor, status Approved
-    if (prog === 100) status = 'Completed'; // Kalau Step 5 selesai
+    if (proj.isApproved) status = 'Approved'; 
+    if (prog === 100) status = 'Completed'; 
 
     handleUpdateProject(projId, { completedTasks: newCompleted, progress: prog, status });
   };
@@ -251,10 +221,8 @@ export default function App() {
     } catch { setAiResult("Error AI."); } finally { setIsAILoading(false); }
   };
 
-  // Helper untuk membersihkan form saat batal
   const cancelEdit = () => {
     setIsEditingProject(false);
-    // Kembalikan form ke nilai asli jika batal
     if(activeProject) setEditForm({ title: activeProject.title, description: activeProject.description });
   };
 
@@ -270,9 +238,9 @@ export default function App() {
 
   const handleDeleteAsset = async (id) => { if(confirm("Hapus aset?")) await deleteDoc(doc(db, "assets", id)); };
 
-  // --- VIEWS RENDERER ---
+  // --- VIEWS ---
 
-  // 1. LOGIN VIEW
+  // LOGIN
   if (view === 'login') {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 font-sans relative overflow-hidden">
@@ -328,41 +296,44 @@ export default function App() {
     );
   }
 
-  // --- ARCHIVE VIEW (SEPARATE PAGE) ---
+  // ARCHIVE
   if (view === 'archive') {
     const isSup = currentUser?.role === 'supervisor';
-    // Filter logic: if supervisor view all, if creator view own team
-    const filterFn = isSup ? (p => true) : (p => p.teamId === currentUser.teamId);
+    // Archive logic: Only show 'Completed' projects OR non-completed but old projects (if list > 10)
+    // Filter active projects first to determine "old" ones
+    const allMyProjects = isSup ? projects : projects.filter(p => p.teamId === currentUser.teamId);
+    // Projects that are explicitly completed
+    const completedProjects = allMyProjects.filter(p => p.status === 'Completed');
+    // Projects that are active but overflow (older than top 10)
+    const activeProjects = allMyProjects.filter(p => p.status !== 'Completed');
+    const oldActiveProjects = activeProjects.slice(10); 
     
-    // Sort logic for archive (oldest first or completed)
-    const archivedProjects = projects.filter(filterFn).slice(10); // Show projects after the first 10
+    const archivedDisplay = [...completedProjects, ...oldActiveProjects];
 
     return (
-      <Layout title="Arsip & Analitik" subtitle="Data Project Lama" showBack onBack={() => setView(isSup ? 'team-list' : 'dashboard')}>
-         {/* DRIVE CARD */}
+      <Layout title="Arsip & Analitik" subtitle="Data Project Selesai" showBack onBack={() => setView(isSup ? 'team-list' : 'dashboard')}>
          <div onClick={() => window.open(RECAP_DRIVE_LINK, '_blank')} className="bg-gradient-to-r from-purple-600 to-pink-600 rounded-[2rem] p-6 mb-8 text-white shadow-xl flex items-center justify-between cursor-pointer active:scale-95 transition-transform relative overflow-hidden">
              <div className="relative z-10"><h3 className="font-bold text-xl mb-1">Recap Content</h3><p className="text-xs opacity-90">Buka Google Drive Arsip</p></div>
              <div className="w-12 h-12 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center"><Archive size={24} className="text-white"/></div>
          </div>
 
-         {/* ANALYTICS SIMPLE */}
          <div className="grid grid-cols-2 gap-4 mb-8">
             <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
                 <div className="text-slate-400 text-[10px] font-bold uppercase mb-1">Total Project</div>
-                <div className="text-2xl font-black text-slate-800">{projects.length}</div>
+                <div className="text-2xl font-black text-slate-800">{allMyProjects.length}</div>
             </div>
             <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
                 <div className="text-slate-400 text-[10px] font-bold uppercase mb-1">Selesai</div>
-                <div className="text-2xl font-black text-emerald-600">{projects.filter(p => p.status === 'Approved' || p.status === 'Completed').length}</div>
+                <div className="text-2xl font-black text-emerald-600">{completedProjects.length}</div>
             </div>
          </div>
 
-         <h3 className="font-bold text-slate-700 mb-4 px-2">Riwayat Lama ({archivedProjects.length})</h3>
-         {archivedProjects.length === 0 ? <div className="text-center py-10 text-slate-400 text-sm">Belum ada arsip lama (masih {'<'} 10 project).</div> : 
+         <h3 className="font-bold text-slate-700 mb-4 px-2">Riwayat ({archivedDisplay.length})</h3>
+         {archivedDisplay.length === 0 ? <div className="text-center py-10 text-slate-400 text-sm">Belum ada arsip.</div> : 
             <div className="space-y-3">
-                {archivedProjects.map(p => (
+                {archivedDisplay.map(p => (
                     <div key={p.id} className="bg-white p-4 rounded-2xl border border-slate-100 flex justify-between items-center opacity-80 hover:opacity-100 transition-opacity">
-                        <div><h4 className="font-bold text-slate-700 text-sm">{p.title}</h4><span className="text-[10px] bg-slate-100 px-2 py-0.5 rounded text-slate-500">{p.status}</span></div>
+                        <div><h4 className="font-bold text-slate-700 text-sm">{p.title}</h4><span className={`text-[10px] px-2 py-0.5 rounded ${p.status === 'Completed' ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>{p.status}</span></div>
                         <div className="text-[10px] text-slate-400">{p.createdAt?.toDate().toLocaleDateString('id-ID') || '-'}</div>
                     </div>
                 ))}
@@ -372,13 +343,10 @@ export default function App() {
     )
   }
 
-  // --- ASSETS PAGE ---
+  // ASSETS
   if (view === 'assets') {
     const isSup = currentUser?.role === 'supervisor';
-    // Back logic: if supervisor came from team-list, go back there. If creator, go back dashboard.
-    // If supervisor was inside a team detail (activeTeamId set), go back to team-projects.
-    // Simplifying for supervisor: Go back to team-list (Main Dashboard) to avoid complexity blank screen
-    const backView = isSup ? 'team-list' : 'dashboard';
+    const backView = isSup ? 'team-list' : 'dashboard'; // Fix blank screen for supervisor
 
     return (
       <Layout title="Gudang Aset" subtitle={isSup ? "Mode Pengelola" : "Download File Resmi"} showBack onBack={() => setView(backView)}>
@@ -408,12 +376,11 @@ export default function App() {
     );
   }
 
-  // --- SUPERVISOR VIEWS ---
+  // SUPERVISOR DASHBOARD
   if (view === 'team-list' && currentUser?.role === 'supervisor') {
     return (
       <Layout title="Dashboard Supervisor" subtitle="Monitoring Tim" showLogout setView={setView} setCurrentUser={setCurrentUser} setLoginStep={setLoginStep} setPasswordInput={setPasswordInput}>
         
-        {/* NEW BUTTON: ARSIP & ANALITIK */}
         <div onClick={() => setView('archive')} className="bg-slate-800 text-white p-5 rounded-[2rem] shadow-lg mb-6 flex items-center justify-between cursor-pointer hover:scale-[1.02] transition-transform">
             <div className="flex items-center gap-3">
                 <div className="bg-white/10 p-3 rounded-xl"><BarChart3 size={20}/></div>
@@ -424,7 +391,8 @@ export default function App() {
 
         <div className="grid grid-cols-1 gap-4">
           {TEAMS.map((team) => {
-            const count = projects.filter(p => p.teamId === team.id).length;
+            // Count active only
+            const count = projects.filter(p => p.teamId === team.id && p.status !== 'Completed').length;
             return (
               <div key={team.id} onClick={() => { setActiveTeamId(team.id); setView('team-projects'); }} className="bg-white p-5 rounded-[2rem] border border-slate-100 glass-card-hover cursor-pointer transition-all relative overflow-hidden group">
                 <div className="absolute right-0 top-0 w-32 h-32 bg-indigo-50 rounded-bl-[4rem] -mr-8 -mt-8 transition-transform group-hover:scale-110"></div>
@@ -433,7 +401,7 @@ export default function App() {
                   <div className="flex-1"><h3 className="font-black text-slate-800 text-xl">{team.name}</h3><p className="text-xs text-slate-500 font-bold line-clamp-1">{team.members.join(' & ')}</p></div>
                   <div className="w-10 h-10 bg-slate-50 rounded-full flex items-center justify-center group-hover:bg-blue-600 group-hover:text-white transition-colors"><ChevronLeft size={20} className="rotate-180"/></div>
                 </div>
-                <div className="flex gap-2 relative z-10"><div className="px-3 py-1.5 bg-slate-100 rounded-lg text-slate-600 text-xs font-bold">{count} Tugas</div></div>
+                <div className="flex gap-2 relative z-10"><div className="px-3 py-1.5 bg-slate-100 rounded-lg text-slate-600 text-xs font-bold">{count} Tugas Aktif</div></div>
               </div>
             );
           })}
@@ -442,14 +410,15 @@ export default function App() {
     );
   }
 
+  // TEAM PROJECTS (SUPERVISOR)
   if (view === 'team-projects' && currentUser?.role === 'supervisor') {
     const tm = TEAMS.find(t => t.id === activeTeamId);
-    // Limit show 10 latest
-    const prj = projects.filter(p => p.teamId === activeTeamId).slice(0, 10);
+    // Limit show 10 latest active
+    const prj = projects.filter(p => p.teamId === activeTeamId && p.status !== 'Completed').slice(0, 10);
     
     return (
       <Layout title={tm.name} subtitle={tm.members.join(' & ')} showBack onBack={() => setView('team-list')} showAssets setView={setView}>
-        {prj.length === 0 ? <div className="text-center py-20 opacity-50"><FolderOpen size={48} className="mx-auto mb-2 text-slate-300"/><p className="text-sm font-bold text-slate-400">Belum ada tugas.</p></div> : 
+        {prj.length === 0 ? <div className="text-center py-20 opacity-50"><FolderOpen size={48} className="mx-auto mb-2 text-slate-300"/><p className="text-sm font-bold text-slate-400">Belum ada tugas aktif.</p></div> : 
             <div className="space-y-4">
                 {prj.map(p => (
                 <div key={p.id} onClick={() => { setActiveProject(p); setView('project-detail'); }} className="bg-white p-5 rounded-[2rem] border border-slate-100 glass-card-hover cursor-pointer">
@@ -459,7 +428,6 @@ export default function App() {
                 </div>
             ))}</div>
         }
-        
         <button onClick={() => handleAddNewProject(tm.id)} disabled={isSaving} className="fixed bottom-8 right-6 z-50 bg-slate-900 text-white h-14 px-6 rounded-full shadow-2xl flex items-center gap-2 font-bold hover:scale-105 transition-transform">
             {isSaving ? <Loader2 className="animate-spin"/> : <Plus/>} Tugas Baru
         </button>
@@ -467,10 +435,11 @@ export default function App() {
     );
   }
 
-  // --- CREATOR DASHBOARD ---
+  // CREATOR DASHBOARD
   if (view === 'dashboard' && currentUser?.role === 'creator') {
     const tm = TEAMS.find(t => t.id === currentUser.teamId);
-    const myProjects = projects.filter(p => p.teamId === currentUser.teamId).slice(0, 10);
+    // Limit 10 active
+    const myProjects = projects.filter(p => p.teamId === currentUser.teamId && p.status !== 'Completed').slice(0, 10);
 
     return (
       <Layout title={`Halo, ${currentUser.name}!`} subtitle={tm.members.join(' & ')} showLogout setView={setView} setCurrentUser={setCurrentUser} setLoginStep={setLoginStep} setPasswordInput={setPasswordInput}>
@@ -481,9 +450,10 @@ export default function App() {
         
         <div className="flex justify-between items-end mb-4">
             <h2 className="font-bold text-slate-800 text-lg">Tugas Terbaru</h2>
+            <button onClick={() => setView('archive')} className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full">Lihat Arsip</button>
         </div>
 
-        {myProjects.length === 0 ? <div className="text-center py-10 border-2 border-dashed border-slate-200 rounded-3xl"><p className="text-sm text-slate-400 font-bold">Belum ada tugas.</p></div> : 
+        {myProjects.length === 0 ? <div className="text-center py-10 border-2 border-dashed border-slate-200 rounded-3xl"><p className="text-sm text-slate-400 font-bold">Hore! Belum ada tugas.</p></div> : 
            <div className="space-y-4">{myProjects.map(project => (
               <div key={project.id} onClick={() => { setActiveProject(project); setView('project-detail'); }} className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm hover:shadow-xl hover:border-blue-100 cursor-pointer active:scale-[0.98] transition-all">
                   <div className="flex justify-between items-start mb-3"><span className="px-2.5 py-1 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-bold uppercase">{project.status}</span>{project.isApproved && <CheckCircle2 size={18} className="text-emerald-500" />}</div>
@@ -496,16 +466,14 @@ export default function App() {
     );
   }
 
-  // --- PROJECT DETAIL (TIMELINE UI) ---
+  // PROJECT DETAIL
   if (view === 'project-detail' && activeProject) {
     const isSup = currentUser?.role === 'supervisor';
     return (
       <Layout title={activeProject.title} subtitle={activeProject.status} showBack onBack={() => setView(isSup ? 'team-projects' : 'dashboard')}>
         
-        {/* AI Modal */}
         {showAIModal && <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-md animate-[slideUp_0.2s_ease-out]"><div className="bg-white rounded-[2rem] w-full max-w-sm p-6 shadow-2xl"><div className="flex justify-between items-center mb-4"><h3 className="font-black text-lg flex items-center gap-2 text-indigo-600"><Sparkles/> AI Script</h3><button onClick={() => setShowAIModal(false)} className="p-2 bg-slate-100 rounded-full"><X size={18}/></button></div>{!aiResult ? <><textarea value={aiPrompt} onChange={e=>setAiPrompt(e.target.value)} placeholder="Topik video..." className="w-full h-32 p-4 bg-slate-50 rounded-2xl text-sm font-medium mb-4 outline-none resize-none"/><button onClick={handleScript} disabled={isAILoading} className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold flex justify-center gap-2">{isAILoading ? <Loader2 className="animate-spin"/> : <Wand2/>} Buat Naskah</button></> : <><div className="h-60 overflow-y-auto text-xs bg-slate-50 p-4 rounded-2xl mb-4 whitespace-pre-line leading-relaxed custom-scrollbar">{aiResult}</div><button onClick={()=>{navigator.clipboard.writeText(aiResult);setShowAIModal(false)}} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold">Salin Naskah</button></>}</div></div>}
 
-        {/* EDIT FORM (Hanya muncul jika supervisor aktif klik tombol edit) */}
         {isEditingProject && isSup ? (
           <div className="bg-white p-6 rounded-[2rem] border-2 border-indigo-50 shadow-xl mb-8 animate-[slideUp_0.3s_ease-out]">
              <input type="text" value={editForm.title} onChange={e=>setEditForm({...editForm,title:e.target.value})} className="w-full mb-4 p-4 bg-slate-50 rounded-2xl text-sm font-bold outline-none border-transparent focus:bg-white focus:ring-2 focus:ring-indigo-500 transition-all" placeholder="Judul Tugas"/>
@@ -513,9 +481,7 @@ export default function App() {
              <div className="flex gap-2 justify-end">
                 <button onClick={()=>handleDeleteProject(activeProject.id)} disabled={isSaving} className="px-4 py-3 bg-red-50 text-red-500 rounded-xl text-xs font-bold hover:bg-red-100 transition-colors">Hapus</button>
                 <button onClick={cancelEdit} className="px-4 py-3 bg-slate-100 text-slate-500 rounded-xl text-xs font-bold hover:bg-slate-200 transition-colors">Batal</button>
-                <button onClick={()=>handleUpdateProject(activeProject.id, editForm) || setIsEditingProject(false)} disabled={isSaving} className="px-6 py-3 bg-indigo-600 text-white rounded-xl text-xs font-bold shadow-lg hover:scale-105 transition-transform">
-                    {isSaving ? "Menyimpan..." : "Simpan"}
-                </button>
+                <button onClick={()=>handleUpdateProject(activeProject.id, editForm) || setIsEditingProject(false)} disabled={isSaving} className="px-6 py-3 bg-indigo-600 text-white rounded-xl text-xs font-bold shadow-lg hover:scale-105 transition-transform">{isSaving ? "Menyimpan..." : "Simpan"}</button>
              </div>
           </div>
         ) : (
@@ -526,6 +492,7 @@ export default function App() {
            <div className="absolute left-[34px] top-4 bottom-0 w-1 bg-slate-200 rounded-full"></div> 
            {WORKFLOW_STEPS.map((step, index) => {
              const isLocked = index > 0 && !WORKFLOW_STEPS[index-1].tasks.every(t => activeProject.completedTasks.includes(t.id));
+             // FIX: Step 5 is unlocked if Approved OR if it was already Approved (to allow re-checking)
              const isFinalLocked = index === 4 && !activeProject.isApproved;
              const locked = isLocked || isFinalLocked;
              
@@ -540,7 +507,16 @@ export default function App() {
                         if(t.id === 't4-4') return (
                            <div key={t.id} className={`p-4 ${step.bg} rounded-xl m-1`}>
                               <div className={`flex items-center gap-2 mb-2 text-xs font-black ${step.text}`}>LINK PREVIEW (480p)</div>
-                              {!isSup && !activeProject.isApproved && <input type="text" className="w-full text-xs p-3 bg-white rounded-lg outline-none font-medium shadow-sm" placeholder="Paste link..." onBlur={e=>handleUpdateProject(activeProject.id,{previewLink:e.target.value,status:'Waiting Review'})} defaultValue={activeProject.previewLink}/>}
+                              {!isSup && !activeProject.isApproved && <input type="text" className="w-full text-xs p-3 bg-white rounded-lg outline-none font-medium shadow-sm" placeholder="Paste link..." onBlur={e=>{
+                                  const val = e.target.value;
+                                  if(val) {
+                                      // AUTO CHECKLIST LOGIC
+                                      const newTasks = !activeProject.completedTasks.includes('t4-4') ? [...activeProject.completedTasks, 't4-4'] : activeProject.completedTasks;
+                                      const total = WORKFLOW_STEPS.reduce((a, s) => a + s.tasks.length, 0);
+                                      const prog = Math.round((newTasks.length / total) * 100);
+                                      handleUpdateProject(activeProject.id, {previewLink:val, status:'Waiting Review', completedTasks: newTasks, progress: prog});
+                                  }
+                              }} defaultValue={activeProject.previewLink}/>}
                               {activeProject.previewLink && <a href={activeProject.previewLink} target="_blank" className="flex items-center justify-center gap-2 w-full py-3 bg-white rounded-lg text-xs font-bold mt-2 shadow-sm hover:scale-[1.02] transition-transform">Buka Preview <ExternalLink size={12}/></a>}
                            </div>
                         )
@@ -548,7 +524,18 @@ export default function App() {
                         if(t.id === 't5-2') return (
                            <div key={t.id} className={`p-4 bg-emerald-50 rounded-xl m-1`}>
                               <div className={`flex items-center gap-2 mb-2 text-xs font-black text-emerald-700`}>LINK FINAL (DRIVE)</div>
-                              {!isSup && <input type="text" className="w-full text-xs p-3 bg-white rounded-lg outline-none font-medium shadow-sm" placeholder="Paste link..." />}
+                              {!isSup && <input type="text" className="w-full text-xs p-3 bg-white rounded-lg outline-none font-medium shadow-sm" placeholder="Paste link..." onBlur={e => {
+                                  const val = e.target.value;
+                                  if(val) {
+                                      // AUTO COMPLETE LOGIC
+                                      const newTasks = !activeProject.completedTasks.includes('t5-2') ? [...activeProject.completedTasks, 't5-2'] : activeProject.completedTasks;
+                                      const total = WORKFLOW_STEPS.reduce((a, s) => a + s.tasks.length, 0);
+                                      const prog = Math.round((newTasks.length / total) * 100);
+                                      // JIKA 100%, STATUS JADI COMPLETED
+                                      const newStatus = prog === 100 ? 'Completed' : activeProject.status;
+                                      handleUpdateProject(activeProject.id, { finalLink: val, completedTasks: newTasks, progress: prog, status: newStatus });
+                                  }
+                              }} />}
                            </div>
                         )
 
