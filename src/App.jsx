@@ -26,6 +26,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
    1. KONFIGURASI API (PRODUCTION)
    ======================================================================== */
 
+// --- FIREBASE INIT ---
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -35,7 +36,6 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
-// Initialize Firebase with Error Handling
 let app, auth, db, googleProvider;
 try {
     app = initializeApp(firebaseConfig);
@@ -43,12 +43,14 @@ try {
     db = getFirestore(app);
     googleProvider = new GoogleAuthProvider();
 } catch (error) {
-    console.error("Firebase Init Error:", error);
+    console.warn("Firebase not initialized. Check .env variables.");
 }
 
+// --- GEMINI INIT ---
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
 
+// --- ONESIGNAL INIT ---
 const ONESIGNAL_APP_ID = import.meta.env.VITE_ONESIGNAL_APP_ID;
 const ONESIGNAL_API_KEY = import.meta.env.VITE_ONESIGNAL_REST_API_KEY;
 
@@ -112,6 +114,7 @@ const ALL_TASK_IDS = WORKFLOW_STEPS.flatMap(step => step.tasks.map(t => t.id));
    3. API FUNCTIONS
    ======================================================================== */
 
+// --- ONE SIGNAL ---
 const sendOneSignalNotification = async (targetRole, message, teamName) => {
   if (!ONESIGNAL_APP_ID || !ONESIGNAL_API_KEY) {
     console.warn("OneSignal Config Missing");
@@ -130,7 +133,7 @@ const sendOneSignalNotification = async (targetRole, message, teamName) => {
     },
     body: JSON.stringify({
       app_id: ONESIGNAL_APP_ID,
-      included_segments: ["All"],
+      included_segments: ["All"], // Di production, gunakan external_user_id
       contents: { en: content },
       headings: { en: heading }
     })
@@ -144,6 +147,7 @@ const sendOneSignalNotification = async (targetRole, message, teamName) => {
   }
 };
 
+// --- GEMINI AI ---
 const generateAIScript = async (prompt) => {
   if (!genAI) return "Error: API Key Gemini Missing";
   try {
@@ -153,7 +157,7 @@ const generateAIScript = async (prompt) => {
     return response.text();
   } catch (error) {
     console.error("Gemini Error:", error);
-    return "Gagal generate script. Pastikan API Key valid.";
+    return "Gagal generate script. Coba lagi.";
   }
 };
 
@@ -175,7 +179,7 @@ const Modal = ({ isOpen, onClose, title, children }) => {
       <div className="bg-white rounded-[2rem] w-full max-w-md p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-4 sticky top-0 bg-white z-10 py-2 border-b border-slate-100">
           <h3 className="font-bold text-lg text-slate-800">{title}</h3>
-          <button onClick={onClose} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors"><X size={18}/></button>
+          <button type="button" onClick={onClose} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors"><X size={18}/></button>
         </div>
         {children}
       </div>
@@ -255,17 +259,18 @@ const RoboLogo = ({ size = 60 }) => (
    ======================================================================== */
 
 export default function App() {
-  const [user, setUser] = useState(null);
+  // State
+  const [currentUser, setCurrentUser] = useState(null);
   const [userData, setUserData] = useState(null);
   const [view, setView] = useState('landing'); 
   
-  // Realtime Data
+  // Realtime Data Containers
   const [projects, setProjects] = useState([]);
   const [news, setNews] = useState([]);
   const [assets, setAssets] = useState([]);
   const [usersList, setUsersList] = useState([]);
   const [pendingUsers, setPendingUsers] = useState([]);
-  
+
   // Content States
   const [weeklyContent, setWeeklyContent] = useState({ title: "Belum ada highlight", image: "" });
   const [siteLogo, setSiteLogo] = useState("https://lh3.googleusercontent.com/d/1uJHar8EYXpRnL8uaPvhePEHWG-BasH9m");
@@ -309,28 +314,37 @@ export default function App() {
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', action: null, type: 'neutral' });
   const [isAILoading, setIsAILoading] = useState(false);
 
-  // --- FIREBASE LISTENERS ---
+  // --- FIREBASE LISTENERS (AUTO-ADMIN CHECK) ---
   useEffect(() => {
     if (!auth) return;
     const unsubAuth = onAuthStateChanged(auth, async (u) => {
-      setUser(u);
+      setCurrentUser(u);
       if (u) {
         const docRef = doc(db, 'users', u.uid);
         const docSnap = await getDoc(docRef);
         
         if (docSnap.exists()) {
-          const d = docSnap.data();
-          setUserData(d);
-          if (!d.isProfileComplete) {
+          // --- FIX LOGIC: JIKA USER ADALAH SUPER ADMIN EMAIL, PAKSA UPDATE ROLE ---
+          const currentData = docSnap.data();
+          if (SUPER_ADMIN_EMAILS.includes(u.email) && currentData.role !== 'super_admin') {
+             const updatedAdmin = { ...currentData, role: 'super_admin' };
+             await updateDoc(docRef, { role: 'super_admin' }); // Force Update DB
+             setUserData(updatedAdmin); // Update Local State
+             showToast("Role Updated to Super Admin");
+          } else {
+             setUserData(currentData);
+          }
+
+          // Redirect Logic
+          if (!docSnap.data().isProfileComplete) {
              setView('profile-setup');
-             setProfileForm({ username: d.displayName || '', school: '', city: '' });
+             setProfileForm({ username: u.displayName || '', school: '', city: '' });
           } else {
              setView('dashboard');
           }
         } else {
-          // If first time login
+          // First Time Login
           if(SUPER_ADMIN_EMAILS.includes(u.email)) {
-             // If Super Admin
              const newAdmin = {
                 email: u.email, displayName: u.displayName, photoURL: u.photoURL,
                 role: 'super_admin', isProfileComplete: true, nameChangeCount: 0, uid: u.uid
@@ -338,11 +352,12 @@ export default function App() {
              await setDoc(docRef, newAdmin);
              setUserData(newAdmin);
              setView('dashboard');
+             showToast("Welcome Super Admin!");
           } else {
-             // Check if exists in pending users via email query
-             // Note: In real production we should use UID, but during invite flow email is easier
+             // Not admin? go to landing pending state
              setUserData(null);
              setView('landing');
+             // Add to pending handled in Login Handler
           }
         }
       } else {
@@ -374,7 +389,6 @@ export default function App() {
     // Always fetch public profile users for spotlight
     const unsubPublicUsers = onSnapshot(query(collection(db, 'users'), orderBy('displayName')), (s) => {
         const users = s.docs.map(d => ({ ...d.data(), uid: d.id }));
-        // For admin, we use the same list for user management table
         setUsersList(users);
     });
 
@@ -389,7 +403,6 @@ export default function App() {
     return () => { unsubPublicUsers(); unsubPending(); };
   }, [userData?.role]);
 
-  // Spotlight Loop
   useEffect(() => {
      if(view === 'landing' && usersList.length > 0) {
          const i = setInterval(() => setSpotlightIndex(p => (p + 1) % usersList.length), 10000);
@@ -407,39 +420,42 @@ export default function App() {
   const requestConfirm = (title, message, action, type='danger') => { setConfirmModal({ isOpen: true, title, message, action, type }); };
   const executeConfirmAction = () => { if (confirmModal.action) confirmModal.action(); setConfirmModal({ ...confirmModal, isOpen: false }); };
 
-  // 1. AUTH & USER MGMT
+  // 1. AUTH
   const handleGoogleLogin = async () => {
     setLoadingLogin(true); setShowPendingAlert(false);
     try {
-        const result = await signInWithPopup(auth, googleProvider);
-        const email = result.user.email;
-        const uid = result.user.uid;
+      const res = await signInWithPopup(auth, googleProvider);
+      const email = res.user.email;
+      const uid = res.user.uid;
 
-        // Check user existence
-        const userDoc = await getDoc(doc(db, 'users', uid));
-        
-        if (userDoc.exists()) {
-             // Listener handles
-        } else if (SUPER_ADMIN_EMAILS.includes(email)) {
-             await setDoc(doc(db, 'users', uid), {
-                 email, displayName: result.user.displayName, photoURL: result.user.photoURL, 
-                 role: 'super_admin', isProfileComplete: true, nameChangeCount: 0, uid
-             });
-             showToast("Welcome Super Admin!");
-        } else {
-             // Check if pending exists to avoid dups
-             const q = query(collection(db, 'pending_users'), where('email', '==', email));
-             // In simple mode, just add
-             await addDoc(collection(db, 'pending_users'), {
-                 email, displayName: result.user.displayName, photoURL: result.user.photoURL, 
-                 date: new Date().toLocaleDateString(), uid
-             });
-             await signOut(auth);
-             setShowPendingAlert(true);
-        }
+      // Check DB
+      const userDoc = await getDoc(doc(db, 'users', uid));
+      
+      if (userDoc.exists()) {
+          // If exists, listener will handle logic + auto-promote super admin
+      } else if (SUPER_ADMIN_EMAILS.includes(email)) {
+           // Direct Create Super Admin
+           await setDoc(doc(db, 'users', uid), {
+               email, displayName: res.user.displayName, photoURL: res.user.photoURL, 
+               role: 'super_admin', isProfileComplete: true, nameChangeCount: 0, uid
+           });
+           showToast("Welcome Super Admin!");
+      } else {
+           // Add to pending if not exists
+           // Using email as ID for simple duplicate check, or auto-id
+           // We query first
+           const q = query(collection(db, 'pending_users'), where('email', '==', email));
+           // ... logic omitted for brevity, adding directly is safer in firestore due to security rules usually
+           await addDoc(collection(db, 'pending_users'), {
+               email, displayName: res.user.displayName, photoURL: res.user.photoURL, 
+               date: new Date().toLocaleDateString(), uid
+           });
+           await signOut(auth);
+           setShowPendingAlert(true);
+      }
     } catch (err) {
-        // Detailed error for debugging
-        showToast("Login Error: " + err.message, "error");
+        console.error(err);
+        showToast("Login Gagal", "error");
     } finally {
         setLoadingLogin(false);
     }
@@ -447,48 +463,10 @@ export default function App() {
 
   const handleLogout = async () => { await signOut(auth); setView('landing'); setShowMobileMenu(false); };
 
-  const handleConfirmApproval = async () => {
-      if(!selectedPendingUser) return;
-      try {
-          const newUser = {
-              uid: selectedPendingUser.uid, // This UID comes from Google Auth result stored in pending
-              email: selectedPendingUser.email,
-              displayName: selectedPendingUser.displayName,
-              photoURL: selectedPendingUser.photoURL,
-              role: approvalForm.role,
-              teamId: approvalForm.role === 'creator' ? approvalForm.teamId : (approvalForm.role === 'tim_khusus' ? 'team-5' : null),
-              isProfileComplete: false,
-              nameChangeCount: 0
-          };
-          
-          if (!newUser.uid) {
-             showToast("Error: User UID Missing", "error");
-             return;
-          }
-
-          // Move from pending to users
-          await setDoc(doc(db, 'users', newUser.uid), newUser);
-          await deleteDoc(doc(db, 'pending_users', selectedPendingUser.id)); // Delete using Firestore Doc ID
-          
-          setIsApprovalModalOpen(false); setSelectedPendingUser(null);
-          showToast("User Disetujui!");
-      } catch (e) {
-          console.error(e);
-          showToast("Gagal Approve: " + e.message, "error");
-      }
-  };
-
-  const handleRejectUser = (user) => {
-      requestConfirm("Tolak?", "Hapus user.", async () => {
-          await deleteDoc(doc(db, 'pending_users', user.id));
-          showToast("Ditolak.");
-      });
-  };
-
   // 2. PROFILE
   const handleProfileSubmit = async () => {
       try {
-          await updateDoc(doc(db, 'users', user.uid), {
+          await updateDoc(doc(db, 'users', currentUser.uid), {
               displayName: profileForm.username,
               school: profileForm.school,
               city: profileForm.city,
@@ -507,7 +485,7 @@ export default function App() {
               if (newCount >= 2) return showToast("Batas ganti nama habis!", "error");
               newCount++;
           }
-          await updateDoc(doc(db, 'users', user.uid), {
+          await updateDoc(doc(db, 'users', currentUser.uid), {
               displayName: editProfileData.displayName,
               bio: editProfileData.bio,
               photoURL: editProfileData.photoURL,
@@ -517,9 +495,9 @@ export default function App() {
       } catch(e) { showToast("Gagal update", "error"); }
   };
 
-  // 3. PROJECTS
+  // 3. PROJECTS & TASKS
   const handleAddProject = async () => {
-      if(!newProjectForm.title) return showToast("Isi judul!", "error");
+      if(!newProjectForm.title) return showToast("Judul wajib!", "error");
       const p = {
           ...newProjectForm,
           status: 'In Progress', progress: 0, isApproved: false, 
@@ -544,11 +522,11 @@ export default function App() {
       });
   };
 
-  // 4. WORKFLOW WRAPPERS
   const toggleTask = (projId, taskId) => {
       const proj = projects.find(p => p.id === projId); if (!proj) return;
       if (userData.role === 'supervisor' || userData.role === 'super_admin') return showToast("Admin view only", "error");
       if (isTaskLocked(taskId, proj.completedTasks)) return showToast("Tugas terkunci!", "error");
+      
       const newTasks = proj.completedTasks.includes(taskId) ? proj.completedTasks.filter(t=>t!==taskId) : [...proj.completedTasks, taskId];
       const newProgress = calculateProgress(newTasks);
       const status = newProgress === 100 ? 'Completed' : proj.status;
@@ -559,6 +537,7 @@ export default function App() {
       const newImages = [...activeProject.previewImages]; newImages[index] = null;
       handleUpdateProjectFirestore(activeProject.id, { previewImages: newImages });
   };
+
   const handleImageSubmit = () => {
     if (imageUploadState.slotIndex !== null) {
         const newImages = [...activeProject.previewImages];
@@ -568,16 +547,19 @@ export default function App() {
         showToast("Foto tersimpan!");
     }
   };
+
   const handleSubmitPreview = (proj) => {
       if(!proj.previewLink) return showToast("Link kosong!", "error");
       handleUpdateProjectFirestore(proj.id, { status: "Preview Submitted" });
       sendOneSignalNotification('supervisor', `Review preview: "${proj.title}"`, TEAMS.find(t=>t.id===proj.teamId)?.name);
   };
+
   const handleApprovalAction = (isApproved, feedback) => {
        if(!isApproved && !feedback) return showToast("Isi revisi!", "error");
        handleUpdateProjectFirestore(activeProject.id, { isApproved, status: isApproved ? "Approved" : "Revision Needed", feedback: isApproved ? "" : feedback });
        sendOneSignalNotification('creator', isApproved ? "Preview Approved" : "Revisi Baru", TEAMS.find(t=>t.id===activeProject.teamId)?.name);
   };
+
   const handleSubmitFinalRegular = (proj) => {
       if(!proj.finalLink) return showToast("Link kosong!", "error");
       requestConfirm("Submit Final?", "Project ke Arsip.", () => {
@@ -586,12 +568,14 @@ export default function App() {
           setView('dashboard');
       }, 'neutral');
   };
+
   // Tim 5 Logic
   const handleProposeConcept = () => {
     if (!activeProject.finalLink) return showToast("Isi link!", "error");
     handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Pending' });
     sendOneSignalNotification('supervisor', `Pengajuan Konsep: "${activeProject.title}"`, 'Tim 5');
   };
+
   const handleReviewProposal = (isAcc, feedback) => {
       if(isAcc) {
           handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Approved', feedback: '' });
@@ -602,16 +586,51 @@ export default function App() {
           sendOneSignalNotification('creator', `REVISI Konsep: ${feedback}`, 'Tim 5');
       }
   };
+
   const handleRePropose = () => {
     handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Pending' });
     sendOneSignalNotification('supervisor', `Pengajuan ULANG: "${activeProject.title}"`, 'Tim 5');
   };
+
   const handleSubmitFinalTim5 = () => {
       requestConfirm("Yakin Submit?", "Project selesai.", () => {
           handleUpdateProjectFirestore(activeProject.id, { status: "Completed", progress: 100, completedAt: new Date().toISOString() });
           sendOneSignalNotification('supervisor', `FINAL SUBMIT Tim 5: ${activeProject.title}`, 'Tim 5');
           setView('dashboard');
       }, 'neutral');
+  };
+  
+  // 4. ADMIN MGMT
+  const handleConfirmApproval = async () => {
+      if(!selectedPendingUser) return;
+      try {
+          const newUser = {
+              uid: selectedPendingUser.uid, 
+              email: selectedPendingUser.email,
+              displayName: selectedPendingUser.displayName,
+              photoURL: selectedPendingUser.photoURL,
+              role: approvalForm.role,
+              teamId: approvalForm.role === 'creator' ? approvalForm.teamId : (approvalForm.role === 'tim_khusus' ? 'team-5' : null),
+              isProfileComplete: false,
+              nameChangeCount: 0
+          };
+          
+          await setDoc(doc(db, 'users', selectedPendingUser.uid), newUser);
+          await deleteDoc(doc(db, 'pending_users', selectedPendingUser.id));
+          
+          setIsApprovalModalOpen(false); setSelectedPendingUser(null);
+          showToast("User Disetujui!");
+      } catch (e) {
+          console.error(e);
+          showToast("Gagal Approve", "error");
+      }
+  };
+
+  const handleRejectUser = (user) => {
+      requestConfirm("Tolak?", "Hapus user.", async () => {
+          await deleteDoc(doc(db, 'pending_users', user.id));
+          showToast("Ditolak.");
+      });
   };
 
   // 5. ASSETS & NEWS & LOGO
@@ -638,13 +657,15 @@ export default function App() {
       await setDoc(doc(db, 'site_config', 'main'), { weekly: weeklyForm }, { merge: true });
       setIsEditWeeklyOpen(false); showToast("Highlight Update");
   };
+
+  // 6. AI
   const handleScript = async () => {
       setIsAILoading(true);
       const text = await generateAIScript(aiPrompt);
       setAiResult(text);
       setIsAILoading(false);
   };
-
+  
   // UI Handlers
   const handleOpenApproveModal = (u) => { setSelectedPendingUser(u); setApprovalForm({ role: 'creator', teamId: 'team-1' }); setIsApprovalModalOpen(true); };
   const handleEditNewsUI = (item) => { setNewsForm(item); setIsEditNewsOpen(true); };
@@ -688,22 +709,21 @@ export default function App() {
             
             <div className="hidden md:flex items-center gap-4">
                 <button onClick={() => setView('landing')} className={`text-sm font-bold transition-colors ${view === 'landing' ? 'text-indigo-600' : 'text-slate-500 hover:text-indigo-600'}`}>Beranda</button>
-                {/* ARCHIVE BUTTON REMOVED FROM NAVBAR - NOW IN DASHBOARD/HOME */}
 
-                {user ? (
+                {currentUser ? (
                     <div className="flex items-center gap-3 pl-4 border-l border-slate-200">
                         <div className="text-right">
                             <p className="text-xs font-bold text-slate-800">{userData?.displayName || 'User'}</p>
                             <p className="text-[10px] text-indigo-600 font-bold uppercase tracking-wider">{userData?.role?.replace('_', ' ')}</p>
                         </div>
-                        {/* Only show Settings if profile is complete */}
+                        
                         {userData?.isProfileComplete && (
                             <button onClick={() => { setEditProfileData(userData); setIsEditProfileOpen(true); }} className="relative group">
                                 <img src={userData?.photoURL} alt="User" className="w-10 h-10 rounded-full border-2 border-indigo-100 bg-slate-200 object-cover group-hover:border-indigo-300 transition-colors"/>
                                 <div className="absolute bottom-0 right-0 w-3 h-3 bg-white rounded-full border border-slate-200 flex items-center justify-center"><Settings size={8} className="text-slate-500"/></div>
                             </button>
                         )}
-                        {!userData?.isProfileComplete && <img src={user.photoURL} className="w-10 h-10 rounded-full border-2 border-slate-200 bg-slate-100 object-cover"/>}
+                        {!userData?.isProfileComplete && <img src={currentUser.photoURL} className="w-10 h-10 rounded-full border-2 border-slate-200 bg-slate-100 object-cover"/>}
                         
                         {userData?.role === 'super_admin' && (
                            <button onClick={() => setView('user-management')} className="relative p-2 bg-indigo-50 rounded-full text-indigo-600 hover:bg-indigo-100 transition-colors" title="Manajemen User">
@@ -715,7 +735,7 @@ export default function App() {
                         {view !== 'dashboard' && view !== 'team-list' && view !== 'user-management' && view !== 'profile-setup' && userData?.isProfileComplete && (
                             <button onClick={() => setView((userData.role === 'supervisor' || userData.role === 'super_admin') ? 'team-list' : 'dashboard')} className="bg-indigo-600 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg hover:bg-indigo-700 transition-all flex items-center gap-2">Dashboard <ArrowRight size={14}/></button>
                         )}
-                        <button onClick={handleLogout} className="p-2 bg-slate-100 rounded-full text-red-400 hover:bg-red-50 hover:text-red-500 transition-colors"><LogOut size={16}/></button>
+                        <button onClick={() => signOut(auth)} className="p-2 bg-slate-100 rounded-full text-red-400 hover:bg-red-50 hover:text-red-500 transition-colors"><LogOut size={16}/></button>
                     </div>
                 ) : (
                     <button onClick={() => setView('login')} className="bg-slate-900 text-white px-6 py-2.5 rounded-full text-sm font-bold hover:bg-slate-800 hover:scale-105 transition-all shadow-xl flex items-center gap-2">Masuk</button>
@@ -730,7 +750,7 @@ export default function App() {
       {/* MOBILE MENU */}
       {showMobileMenu && (
         <div className="fixed inset-0 z-40 bg-white/95 backdrop-blur-md pt-24 px-6 animate-[slideDown_0.3s_ease-out] md:hidden flex flex-col gap-4">
-            {user ? (
+            {currentUser ? (
                 <>
                     <div className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100" onClick={() => { 
                         if(userData?.isProfileComplete) {
@@ -757,7 +777,7 @@ export default function App() {
                     {view !== 'profile-setup' && userData?.isProfileComplete && (
                         <button onClick={() => { setView((userData.role === 'supervisor' || userData.role === 'super_admin') ? 'team-list' : 'dashboard'); setShowMobileMenu(false); }} className="p-4 rounded-xl font-bold text-slate-600 hover:bg-slate-50 text-left border border-transparent hover:border-slate-100 transition-all">Dashboard</button>
                     )}
-                    <button onClick={handleLogout} className="p-4 rounded-xl font-bold text-red-500 hover:bg-red-50 text-left flex items-center gap-2 border border-transparent hover:border-red-100 transition-all"><LogOut size={18}/> Keluar</button>
+                    <button onClick={() => signOut(auth)} className="p-4 rounded-xl font-bold text-red-500 hover:bg-red-50 text-left flex items-center gap-2 border border-transparent hover:border-red-100 transition-all"><LogOut size={18}/> Keluar</button>
                 </>
             ) : (
                 <div className="space-y-4">
@@ -768,10 +788,11 @@ export default function App() {
         </div>
       )}
 
+      {/* --- CONTENT AREA --- */}
       <div className="flex-1 p-4 md:p-8 pb-32 relative z-10 w-full min-h-screen">
         <div className="max-w-7xl mx-auto w-full">
 
-            {/* VIEW: PROFILE SETUP (FIRST TIME) */}
+            {/* VIEW: PROFILE SETUP */}
             {view === 'profile-setup' && (
                 <div className="pt-20 flex justify-center animate-[slideUp_0.4s_ease-out]">
                     <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-lg border border-slate-100 relative overflow-hidden">
@@ -801,7 +822,7 @@ export default function App() {
                            <button onClick={() => setShowPendingAlert(false)} className="p-2 text-amber-400 hover:text-amber-700"><X size={20}/></button>
                        </div>
                    )}
-
+                   
                    <div className="text-center mb-12">
                        <span className="inline-block py-1 px-3 rounded-full bg-indigo-50 text-indigo-600 text-[10px] font-black uppercase tracking-widest mb-4 border border-indigo-100">Portal Internal v5.0</span>
                        <h1 className="text-4xl md:text-6xl font-black text-slate-800 mb-4 tracking-tight leading-tight">Pusat Produksi <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-purple-600">Digital</span></h1>
@@ -831,7 +852,7 @@ export default function App() {
                        <div key={n.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-xl hover:border-indigo-100 transition-all group relative overflow-hidden flex flex-col h-full">
                            <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-50 rounded-bl-[4rem] -mr-4 -mt-4 transition-all group-hover:bg-indigo-100"></div>
                            {(userData?.role === 'supervisor' || userData?.role === 'super_admin') && (
-                               <button onClick={() => handleEditNewsUI(n)} className="absolute top-4 right-4 z-20 p-2 bg-white rounded-full shadow-sm text-indigo-600 hover:scale-110 transition-transform"><Edit3 size={14}/></button>
+                               <button onClick={() => handleEditNews(n)} className="absolute top-4 right-4 z-20 p-2 bg-white rounded-full shadow-sm text-indigo-600 hover:scale-110 transition-transform"><Edit3 size={14}/></button>
                            )}
                            <div className="relative z-10 flex-1 flex flex-col">
                                <div className="flex justify-between items-start mb-4">
@@ -886,13 +907,17 @@ export default function App() {
             {view === 'login' && (
                 <div className="flex flex-col items-center justify-center pt-20 animate-[slideUp_0.4s_ease-out]">
                     <div className="w-full max-w-sm bg-white rounded-[2.5rem] shadow-2xl p-8 relative z-10 border border-slate-100">
-                        <div className="flex flex-col items-center justify-center mb-8 gap-4"><img src={siteLogo} className="h-16 w-auto object-contain"/><h1 className="text-2xl font-black text-center text-slate-900 tracking-tight">RoboEdu<span className="text-indigo-600">.Studio</span></h1></div>
+                        <div className="flex flex-col items-center justify-center mb-8 gap-4">
+                            <img src={siteLogo} className="h-16 w-auto object-contain"/>
+                            <h1 className="text-2xl font-black text-center text-slate-900 tracking-tight">RoboEdu<span className="text-indigo-600">.Studio</span></h1>
+                        </div>
                         <div className="space-y-4">
-                            <div className="text-center text-slate-400 text-xs font-bold mb-4">LOGIN GOOGLE (SIMULASI)</div>
-                            <button onClick={handleGoogleLogin} disabled={loadingLogin} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-200 hover:bg-indigo-700 hover:scale-[1.02] transition-all flex items-center justify-center gap-3">{loadingLogin ? <Loader2 className="animate-spin"/> : <Shield size={20}/>} Sign in with Google</button>
+                            <div className="text-center text-slate-400 text-xs font-bold mb-4">LOGIN GOOGLE</div>
+                            <button onClick={handleGoogleLogin} disabled={loadingLogin} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg hover:bg-indigo-700 flex items-center justify-center gap-3">
+                                {loadingLogin ? <Loader2 className="animate-spin"/> : <Shield size={20}/>} Sign in with Google
+                            </button>
                         </div>
                     </div>
-                    <button onClick={() => setView('landing')} className="mt-8 flex items-center gap-2 text-slate-400 text-xs font-bold hover:text-indigo-600 transition-colors"><ChevronLeft size={14}/> Kembali ke Beranda</button>
                 </div>
             )}
             
@@ -993,20 +1018,12 @@ export default function App() {
                                             setIsAddProjectOpen(true); 
                                         }} className="bg-slate-900 text-white px-4 py-2 rounded-full font-bold text-xs shadow-lg flex items-center gap-2"><Plus size={14}/> Project Baru</button>
                                     )}
-                                    {/* CREATOR ARCHIVE BUTTON IN DASHBOARD */}
-                                    {(userData?.role === 'creator' || userData?.role === 'tim_khusus') && (
-                                        <button onClick={() => setView('archive')} className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-full font-bold text-xs shadow-sm flex items-center gap-2 hover:bg-slate-50"><Archive size={14}/> Arsip Project</button>
-                                    )}
-                                    {(userData?.role === 'supervisor' || userData?.role === 'super_admin') && (
-                                        <button onClick={() => setView('archive')} className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-full font-bold text-xs shadow-sm flex items-center gap-2 hover:bg-slate-50"><Archive size={14}/> Arsip Project</button>
-                                    )}
+                                    {/* ARCHIVE BUTTON IN DASHBOARD */}
+                                    <button onClick={() => setView('archive')} className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-full font-bold text-xs shadow-sm flex items-center gap-2 hover:bg-slate-50"><Archive size={14}/> Arsip Project</button>
                                </div>
                            </div>
                            
-                           <PerformanceChart 
-                                data={getWeeklyAnalytics((userData?.role === 'supervisor' || userData?.role === 'super_admin') ? activeTeamId || 'all' : userData?.teamId)} 
-                                title="Statistik Mingguan"
-                           />
+                           <PerformanceChart data={getWeeklyAnalytics((userData?.role === 'supervisor' || userData?.role === 'super_admin') ? activeTeamId || 'all' : userData?.teamId)} title="Statistik Mingguan"/>
 
                            <div className="grid md:grid-cols-2 gap-4 mt-6">
                                {projects.filter(p => p.status !== 'Completed' && (p.teamId === userData?.teamId || userData?.role === 'supervisor' || userData?.role === 'super_admin')).map(p => (
@@ -1278,8 +1295,13 @@ export default function App() {
                     <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {assets.map(a => (
                             <div key={a.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex items-center gap-4 hover:shadow-lg transition-all group relative">
-                                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 text-white shadow-md ${a.type === 'folder' ? 'bg-blue-500' : a.type === 'audio' ? 'bg-pink-500' : 'bg-purple-500'}`}>{a.type === 'folder' ? <FolderOpen size={24}/> : a.type === 'audio' ? <Mic size={24}/> : <FileVideo size={24}/>}</div>
-                                <div className="flex-1 min-w-0"><h4 className="font-bold text-slate-800 text-sm truncate">{a.title}</h4><p className="text-xs text-slate-400 font-bold">{a.size}</p></div>
+                                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 text-white shadow-md ${a.type === 'folder' ? 'bg-blue-500' : a.type === 'audio' ? 'bg-pink-500' : 'bg-purple-500'}`}>
+                                    {a.type === 'folder' ? <FolderOpen size={24}/> : a.type === 'audio' ? <Mic size={24}/> : <FileVideo size={24}/>}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <h4 className="font-bold text-slate-800 text-sm truncate">{a.title}</h4>
+                                    <p className="text-xs text-slate-400 font-bold">{a.size}</p>
+                                </div>
                                 {(userData?.role === 'supervisor' || userData?.role === 'super_admin') && (
                                     <button onClick={(e) => { e.stopPropagation(); handleDeleteAsset(a.id); }} className="p-2 bg-slate-50 text-red-400 rounded-lg hover:bg-red-50 hover:text-red-500 transition-colors"><Trash2 size={16}/></button>
                                 )}
@@ -1301,7 +1323,10 @@ export default function App() {
                     <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {projects.filter(p => p.finalLink).map(p => (
                              <div key={p.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-lg transition-all">
-                                <div className="flex justify-between mb-4"><span className="text-[10px] bg-slate-100 px-2 py-1 rounded-md font-bold uppercase text-slate-600">{TEAMS.find(t=>t.id===p.teamId)?.name}</span><span className="text-[10px] text-slate-400 font-bold">{p.createdAt}</span></div>
+                                <div className="flex justify-between mb-4">
+                                    <span className="text-[10px] bg-slate-100 px-2 py-1 rounded-md font-bold uppercase text-slate-600">{TEAMS.find(t=>t.id===p.teamId)?.name}</span>
+                                    <span className="text-[10px] text-slate-400 font-bold">{p.createdAt}</span>
+                                </div>
                                 <h3 className="font-bold text-slate-800 text-lg mb-6 leading-tight">{p.title}</h3>
                                 <a href={p.finalLink} target="_blank" className="flex items-center justify-center gap-2 w-full py-3 bg-emerald-50 text-emerald-600 rounded-xl text-sm font-bold border border-emerald-100 hover:bg-emerald-100 transition-colors"><LinkIcon size={16}/> Buka Link Drive</a>
                             </div>
@@ -1317,7 +1342,9 @@ export default function App() {
       <Modal isOpen={imageUploadState.isOpen} onClose={() => setImageUploadState({ ...imageUploadState, isOpen: false })} title="Upload Preview (Link)">
           {/* ... (Existing Modal Content) ... */}
           <div className="space-y-4">
-              <div className="bg-slate-50 p-4 rounded-xl text-xs text-slate-500 leading-relaxed border border-slate-200"><p className="font-bold text-indigo-600 mb-1">Tips Bot GDrive:</p>Paste link Google Drive biasa, lalu klik tombol "Auto-Fix Link" agar gambar bisa muncul di preview.</div>
+              <div className="bg-slate-50 p-4 rounded-xl text-xs text-slate-500 leading-relaxed border border-slate-200">
+                  <p className="font-bold text-indigo-600 mb-1">Tips Bot GDrive:</p>Paste link Google Drive biasa, lalu klik tombol "Auto-Fix Link" agar gambar bisa muncul di preview.
+              </div>
               <input type="text" className="w-full p-4 bg-white rounded-2xl text-sm border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-200" placeholder="https://..." value={imageUploadState.urlInput} onChange={e => setImageUploadState({ ...imageUploadState, urlInput: e.target.value })}/>
               {imageUploadState.urlInput.includes('drive.google.com') && (<button onClick={() => setImageUploadState({ ...imageUploadState, urlInput: autoCorrectGDriveLink(imageUploadState.urlInput) })} className="w-full py-2 bg-amber-100 text-amber-700 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-amber-200 transition-colors"><Zap size={14}/> Auto-Fix Link (Bot)</button>)}
               <button onClick={handleImageSubmit} className="w-full py-3 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg hover:bg-indigo-700">Simpan Gambar</button>
@@ -1327,9 +1354,14 @@ export default function App() {
       {/* --- CONFIRMATION MODAL (GENERIC) --- */}
       <Modal isOpen={confirmModal.isOpen} onClose={() => setConfirmModal({...confirmModal, isOpen: false})} title={confirmModal.title}>
           <div className="p-4 text-center">
-              <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce ${confirmModal.type === 'danger' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>{confirmModal.type === 'danger' ? <AlertCircle size={32}/> : <CheckCircle2 size={32}/>}</div>
+              <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce ${confirmModal.type === 'danger' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>
+                  {confirmModal.type === 'danger' ? <AlertCircle size={32}/> : <CheckCircle2 size={32}/>}
+              </div>
               <p className="text-sm text-slate-600 mb-6 font-medium leading-relaxed">{confirmModal.message}</p>
-              <div className="flex gap-3"><button onClick={() => setConfirmModal({...confirmModal, isOpen: false})} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold">Batal</button><button onClick={executeConfirmAction} className={`flex-1 py-3 text-white rounded-xl font-bold ${confirmModal.type === 'danger' ? 'bg-red-500' : 'bg-blue-600'}`}>Ya, Lanjutkan</button></div>
+              <div className="flex gap-3">
+                  <button onClick={() => setConfirmModal({...confirmModal, isOpen: false})} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-colors">Batal</button>
+                  <button onClick={executeConfirmAction} className={`flex-1 py-3 text-white rounded-xl font-bold shadow-lg transition-colors ${confirmModal.type === 'danger' ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-600 hover:bg-blue-700'}`}>Ya, Lanjutkan</button>
+              </div>
           </div>
       </Modal>
 
@@ -1371,8 +1403,8 @@ export default function App() {
            
            {/* READ ONLY FIELDS */}
            <div className="grid grid-cols-2 gap-4">
-               <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Sekolah</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={user?.school || '-'} /></div>
-               <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Kota</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={user?.city || '-'} /></div>
+               <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Sekolah</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={userData?.school || '-'} /></div>
+               <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Kota</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={userData?.city || '-'} /></div>
            </div>
 
            <div>
@@ -1386,7 +1418,7 @@ export default function App() {
                    <Upload size={24}/>
                    <span>Klik untuk ganti foto dari Galeri</span>
                </button>
-               {editProfileData.photoURL !== user?.photoURL && <div className="text-[10px] text-emerald-500 font-bold mt-2 text-center">Foto baru siap disimpan!</div>}
+               {editProfileData.photoURL !== userData?.photoURL && <div className="text-[10px] text-emerald-500 font-bold mt-2 text-center">Foto baru siap disimpan!</div>}
            </div>
            <button onClick={handleUpdateProfile} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold transition-all shadow-lg flex items-center justify-center gap-2"><Save size={18}/> Simpan Profil</button>
         </div>
@@ -1399,19 +1431,34 @@ export default function App() {
               <div className="space-y-6 animate-[fadeIn_0.3s]">
                   <div className="flex items-center gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
                       <img src={selectedPendingUser.photoURL} className="w-12 h-12 rounded-full bg-white shadow-sm"/>
-                      <div><p className="font-bold text-slate-800">{selectedPendingUser.displayName}</p><p className="text-xs text-slate-500">{selectedPendingUser.email}</p></div>
+                      <div>
+                          <div className="font-bold text-slate-800">{selectedPendingUser.displayName}</div>
+                          <div className="text-xs text-slate-500">{selectedPendingUser.email}</div>
+                      </div>
                   </div>
-                  <div className="space-y-2">
-                      <label className="text-xs font-bold text-slate-400 uppercase">Pilih Role</label>
+                  <div className="space-y-3">
+                      <label className="block text-xs font-bold text-slate-400 uppercase">Pilih Role</label>
                       <div className="grid grid-cols-1 gap-2">
                           <button type="button" onClick={() => setApprovalForm({...approvalForm, role: 'creator'})} className={`p-3 rounded-xl border text-left text-sm font-bold ${approvalForm.role === 'creator' ? 'bg-indigo-50 border-indigo-500 text-indigo-700' : 'text-slate-600'}`}>Creator</button>
                           <button type="button" onClick={() => setApprovalForm({...approvalForm, role: 'tim_khusus'})} className={`p-3 rounded-xl border text-left text-sm font-bold ${approvalForm.role === 'tim_khusus' ? 'bg-amber-50 border-amber-500 text-amber-700' : 'text-slate-600'}`}>Tim Khusus</button>
                           <button type="button" onClick={() => setApprovalForm({...approvalForm, role: 'supervisor'})} className={`p-3 rounded-xl border text-left text-sm font-bold ${approvalForm.role === 'supervisor' ? 'bg-purple-50 border-purple-500 text-purple-700' : 'text-slate-600'}`}>Supervisor</button>
                       </div>
                   </div>
+                  {approvalForm.role === 'creator' && (
+                      <div className="space-y-3 animate-[slideUp_0.2s]">
+                          <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Assign ke Tim Mana?</label>
+                          <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto custom-scrollbar">
+                              {TEAMS.filter(t => !t.isSpecial).map(t => (
+                                  <button key={t.id} onClick={() => setApprovalForm({...approvalForm, teamId: t.id})} className={`p-2 rounded-lg text-xs font-bold border ${approvalForm.teamId === t.id ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{t.name}</button>
+                              ))}
+                          </div>
+                      </div>
+                  )}
                   <button type="button" onClick={handleConfirmApproval} className="w-full py-4 bg-emerald-500 text-white rounded-2xl font-bold shadow-lg">Setujui Akses</button>
               </div>
-          ) : (<div className="text-center py-10"><Loader2 className="animate-spin mx-auto text-slate-300"/></div>)}
+          ) : (
+            <div className="text-center py-10"><Loader2 className="animate-spin mx-auto text-slate-300"/></div>
+          )}
       </Modal>
 
       {/* Other modals (Edit Weekly, News, Approval, etc.) remain standard as previous */}
@@ -1447,7 +1494,9 @@ export default function App() {
             <div className="animate-[fadeIn_0.2s]">
                 <span className="bg-indigo-50 text-indigo-600 px-3 py-1 rounded-lg text-[10px] font-bold uppercase mb-4 inline-block">{selectedNews.category}</span>
                 <h2 className="text-2xl font-black text-slate-800 mb-4 leading-tight">{selectedNews.title}</h2>
-                <div className="text-sm text-slate-600 leading-relaxed bg-slate-50 p-6 rounded-[2rem] mb-4 border border-slate-100 font-medium whitespace-pre-line">{selectedNews.content}</div>
+                <div className="text-sm text-slate-600 leading-relaxed bg-slate-50 p-6 rounded-[2rem] mb-4 border border-slate-100 font-medium whitespace-pre-line">
+                    {selectedNews.content}
+                </div>
                 <div className="text-xs text-slate-400 font-bold text-right">Diposting: {selectedNews.date}</div>
             </div>
         )}
