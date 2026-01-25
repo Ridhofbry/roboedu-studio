@@ -444,29 +444,27 @@ export default function App() {
     }, []);
 
     // --- DATA LISTENERS ---
+    // --- DATA LISTENERS ---
     useEffect(() => {
-        // OneSignal Initialization
+        // OneSignal Initialization (Mount Only)
         if (window.OneSignalDeferred && ONESIGNAL_APP_ID) {
             window.OneSignalDeferred.push(async function (OneSignal) {
-                await OneSignal.init({
-                    appId: ONESIGNAL_APP_ID,
-                    safari_web_id: "web.onesignal.auto.123", // Optional
-                    notifyButton: { enable: true },
-                    allowLocalhostAsSecureOrigin: true,
-                });
-                // Auto-prompt
+                await OneSignal.init({ appId: ONESIGNAL_APP_ID, notifyButton: { enable: true }, allowLocalhostAsSecureOrigin: true });
                 OneSignal.Slidedown.promptPush();
             });
         }
+    }, []);
 
-        if (!db) return;
-
+    // Firestore Listeners (Active User Only)
+    useEffect(() => {
+        if (!db || !user) return; // STOP HERE if not logged in
 
         // Error Handler
         const handleDbError = (context) => (error) => {
             console.error(`Error fetching ${context}:`, error);
             if (error.code === 'permission-denied') {
-                showToast(`Akses Ditolak: Gagal memuat ${context}. Cek Rules!`, "error");
+                // Only show error if user is still logged in (ignore logout errors)
+                if (user) showToast(`Akses Ditolak: Gagal memuat ${context}. Cek Rules!`, "error");
             }
         };
 
