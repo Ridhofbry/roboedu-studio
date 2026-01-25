@@ -364,20 +364,35 @@ export default function App() {
                     } else {
                         // User not in DB
                         if (SUPER_ADMIN_EMAILS.includes(u.email)) {
+                            console.log('🔵 DEBUG: Creating new Super Admin user');
                             const newAdmin = {
-                                email: u.email, displayName: '',  // ✅ Kosong untuk force profile setup
+                                email: u.email,
+                                displayName: '',  // ✅ Kosong untuk force profile setup
                                 photoURL: `https://ui-avatars.com/api/?name=${encodeURIComponent(u.email)}&background=random`,
-                                role: 'super_admin', isProfileComplete: false, nameChangeCount: 0, uid: u.uid, school: '', city: '', bio: 'Super Administrator'
+                                role: 'super_admin',
+                                isProfileComplete: false,
+                                nameChangeCount: 0,
+                                uid: u.uid,
+                                school: '',
+                                city: '',
+                                bio: 'Super Administrator'
                             };
+                            console.log('🔵 DEBUG: New admin data:', newAdmin);
+
                             await setDoc(docRef, newAdmin);
+                            console.log('🔵 DEBUG: User saved to Firestore');
+
                             setUserData(newAdmin);
+                            console.log('🔵 DEBUG: State updated');
 
                             const q = query(collection(db, 'pending_users'), where('email', '==', u.email));
                             const snaps = await getDocs(q);
                             snaps.forEach(async (doc) => await deleteDoc(doc.ref));
 
+                            console.log('🔵 DEBUG: Setting view to profile-setup');
                             setView('profile-setup');
-                            setProfileForm({ username: '', school: '', city: '' });  // ✅ Reset form
+                            setProfileForm({ username: '', school: '', city: '' });
+                            console.log('🔵 DEBUG: Profile form reset');
                         } else {
                             const q = query(collection(db, 'pending_users'), where('email', '==', u.email));
                             const querySnap = await getDocs(q);
@@ -497,6 +512,27 @@ export default function App() {
         }
     };
 
+    const handlePhotoUpload = async (file) => {
+        if (!file) return;
+        if (!storage) return showToast("Storage tidak tersedia", "error");
+
+        try {
+            console.log('🔵 DEBUG: Uploading photo...', file.name);
+            const fileRef = ref(storage, `profile-photos/${user.uid}/${Date.now()}_${file.name}`);
+            await uploadBytes(fileRef, file);
+            const photoURL = await getDownloadURL(fileRef);
+            console.log('🔵 DEBUG: Photo uploaded:', photoURL);
+
+            await updateDoc(doc(db, 'users', user.uid), { photoURL });
+            setUserData({ ...userData, photoURL });
+            setEditProfileData({ ...editProfileData, photoURL });
+            showToast('Foto berhasil diupload!');
+        } catch (e) {
+            console.error('Upload error:', e);
+            showToast('Upload gagal: ' + e.message, 'error');
+        }
+    };
+
     const handleUpdateProfile = async () => {
         try {
             let newCount = userData.nameChangeCount || 0;
@@ -528,7 +564,34 @@ export default function App() {
     const handleRejectUser = (u) => { requestConfirm("Tolak?", "Hapus user.", async () => { await deleteDoc(doc(db, 'pending_users', u.id)); showToast("Ditolak."); }); };
 
     // PROJECTS
-    const handleAddProject = async () => { if (!newProjectForm.title) return showToast("Isi judul!", "error"); const p = { ...newProjectForm, status: 'In Progress', progress: 0, isApproved: false, previewImages: newProjectForm.isBigProject ? Array(20).fill(null) : [], completedTasks: [], equipment: '', script: '', feedback: '', finalLink: '', previewLink: '', createdAt: new Date().toLocaleDateString(), proposalStatus: 'None', teamId: (userData.role === 'supervisor' || userData.role === 'super_admin') ? newProjectForm.teamId : userData.teamId }; await addDoc(collection(db, 'projects'), p); setIsAddProjectOpen(false); showToast("Project Dibuat!"); };
+    const handleAddProject = async () => {
+        console.log('🔵 DEBUG: Add project called', newProjectForm);
+        if (!newProjectForm.title) return showToast("Isi judul!", "error");
+
+        const p = {
+            ...newProjectForm,
+            status: 'In Progress',
+            progress: 0,
+            isApproved: false,
+            previewImages: newProjectForm.isBigProject ? Array(20).fill(null) : [],
+            completedTasks: [],
+            equipment: '',
+            script: '',
+            feedback: '',
+            finalLink: '',
+            previewLink: '',
+            createdAt: new Date().toLocaleDateString(),
+            proposalStatus: 'None',
+            teamId: (userData.role === 'supervisor' || userData.role === 'super_admin') ? newProjectForm.teamId : userData.teamId
+        };
+
+        console.log('🔵 DEBUG: Saving project to Firestore...', p);
+        await addDoc(collection(db, 'projects'), p);
+        console.log('🔵 DEBUG: Project saved successfully!');
+
+        setIsAddProjectOpen(false);
+        showToast("Project Dibuat!");
+    };
     const handleUpdateProjectFirestore = async (id, data) => { try { await updateDoc(doc(db, 'projects', id), data); } catch (e) { showToast("Gagal update project", "error"); } };
     const handleDeleteProject = (id) => { requestConfirm("Hapus Project?", "Permanen.", async () => { await deleteDoc(doc(db, 'projects', id)); if (activeProject?.id === id) { setActiveProject(null); setView('dashboard'); } showToast("Project Dihapus"); }); };
     const toggleTask = (projId, taskId) => { const proj = projects.find(p => p.id === projId); if (!proj) return; if (userData.role === 'supervisor' || userData.role === 'super_admin') return showToast("Admin view only", "error"); if (isTaskLocked(taskId, proj.completedTasks)) return showToast("Tugas terkunci!", "error"); const newTasks = proj.completedTasks.includes(taskId) ? proj.completedTasks.filter(t => t !== taskId) : [...proj.completedTasks, taskId]; const newProgress = calculateProgress(newTasks); const status = newProgress === 100 ? 'Completed' : proj.status; handleUpdateProjectFirestore(projId, { completedTasks: newTasks, progress: newProgress, status }); };
