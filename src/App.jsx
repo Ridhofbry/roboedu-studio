@@ -30,6 +30,19 @@ import {
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
+// --- HELPER FUNCTION FOR DATES ---
+const formatFirestoreDate = (date) => {
+    if (!date) return '-';
+    try {
+        if (typeof date === 'string') return date;
+        if (date?.toDate && typeof date.toDate === 'function') return date.toDate().toLocaleDateString();
+        if (date?.seconds) return new Date(date.seconds * 1000).toLocaleDateString();
+        return 'Invalid Date';
+    } catch (e) {
+        return 'Date Error';
+    }
+};
+
 /* ========================================================================
    1. KONFIGURASI API & SAFETY CHECK
    ======================================================================== */
@@ -1391,7 +1404,7 @@ export default function App() {
                             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                                 {projects.filter(p => p.finalLink).map(p => (
                                     <div key={p.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-lg transition-all">
-                                        <div className="flex justify-between mb-4"><span className="text-[10px] bg-slate-100 px-2 py-1 rounded-md font-bold uppercase text-slate-600">{TEAMS.find(t => t.id === p.teamId)?.name}</span><span className="text-[10px] text-slate-400 font-bold">{p.createdAt?.toDate ? p.createdAt.toDate().toLocaleDateString() : p.createdAt}</span></div>
+                                        <div className="flex justify-between mb-4"><span className="text-[10px] bg-slate-100 px-2 py-1 rounded-md font-bold uppercase text-slate-600">{TEAMS.find(t => t.id === p.teamId)?.name}</span><span className="text-[10px] text-slate-400 font-bold">{formatFirestoreDate(p.createdAt)}</span></div>
                                         <h3 className="font-bold text-slate-800 text-lg mb-6 leading-tight">{p.title}</h3>
                                         <a href={p.finalLink} target="_blank" className="flex items-center justify-center gap-2 w-full py-3 bg-emerald-50 text-emerald-600 rounded-xl text-sm font-bold border border-emerald-100 hover:bg-emerald-100 transition-colors"><LinkIcon size={16} /> Buka Link Drive</a>
                                     </div>
@@ -1430,16 +1443,7 @@ export default function App() {
                                                     <CheckCircle2 size={10} /> Completed
                                                 </span>
                                                 <span className="text-[10px] text-slate-400 font-bold">
-                                                    {(() => {
-                                                        const d = p.createdAt;
-                                                        if (!d) return '-';
-                                                        try {
-                                                            if (typeof d === 'string') return d;
-                                                            if (d?.toDate) return d.toDate().toLocaleDateString();
-                                                            if (d?.seconds) return new Date(d.seconds * 1000).toLocaleDateString();
-                                                            return 'Invalid Date';
-                                                        } catch (e) { return 'Date Error'; }
-                                                    })()}
+                                                    {formatFirestoreDate(p.createdAt)}
                                                 </span>
                                             </div>
                                             <div className="flex items-center gap-2 mb-2">
