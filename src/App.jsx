@@ -8,13 +8,19 @@ import {
   Archive, Link as LinkIcon, Download, ChevronLeft, Wand2, Plus,
   Trash2, AlertCircle, FileVideo, UserCircle, UserPlus, Shield, Clock,
   Maximize2, Save, MapPin, School, User, Zap, Calendar, Bot, Check, AlertTriangle,
-  Quote, Upload, Terminal
+  Quote, Upload, Terminal, Mail, Key
 } from 'lucide-react';
 
 // --- PRODUCTION IMPORTS ---
 import { initializeApp } from "firebase/app";
 import { 
-  getAuth, GoogleAuthProvider, signInWithRedirect, signOut, onAuthStateChanged, setPersistence, browserLocalPersistence
+  getAuth, 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword,
+  signOut, 
+  onAuthStateChanged, 
+  setPersistence, 
+  browserLocalPersistence
 } from "firebase/auth";
 import { 
   getFirestore, doc, setDoc, getDoc, updateDoc, deleteDoc, 
@@ -37,20 +43,20 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
-let app, auth, db, googleProvider;
+let app, auth, db;
 
 if (API_KEY_EXISTS) {
     try {
         app = initializeApp(firebaseConfig);
         auth = getAuth(app);
         db = getFirestore(app);
-        googleProvider = new GoogleAuthProvider();
-        // Set persistensi lokal (PENTING)
+        // Penting untuk mobile: Local Persistence
         setPersistence(auth, browserLocalPersistence).catch(console.error);
     } catch (error) {
         console.error("Firebase Init Error:", error);
     }
 }
+
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
 
@@ -241,7 +247,7 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [userData, setUserData] = useState(null);
   const [view, setView] = useState('landing'); 
-  const [isAuthChecking, setIsAuthChecking] = useState(true); // Default loading true
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
   
   // Data Containers
   const [projects, setProjects] = useState([]);
@@ -267,7 +273,12 @@ export default function App() {
   const [selectedNews, setSelectedNews] = useState(null);
   const [selectedPendingUser, setSelectedPendingUser] = useState(null);
 
-  // Form States
+  // Form States (Login)
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [isRegistering, setIsRegistering] = useState(false);
+
+  // Form States (Data)
   const [profileForm, setProfileForm] = useState({ username: '', school: '', city: '' });
   const [editProfileData, setEditProfileData] = useState({ displayName: '', bio: '', photoURL: '', school: '', city: '' });
   const [newProjectForm, setNewProjectForm] = useState({ title: '', isBigProject: false, teamId: 'team-1', deadline: '' });
@@ -293,57 +304,50 @@ export default function App() {
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', action: null, type: 'neutral' });
   const [isAILoading, setIsAILoading] = useState(false);
 
-  // --- FIREBASE AUTH LISTENER (THE CORE LOGIC) ---
+  // --- FIREBASE AUTH LISTENER (MAIN SOURCE OF TRUTH) ---
   useEffect(() => {
     if (!auth) return;
     
-    // Start Checking
+    // Start Loading
     setIsAuthChecking(true);
 
     const unsubAuth = onAuthStateChanged(auth, async (u) => {
-      setUser(u); // Update state user dasar
+      setUser(u); // Sync local state
       
       if (u) {
-        console.log("User detected:", u.email);
+        // User is logged in
         const docRef = doc(db, 'users', u.uid);
         const docSnap = await getDoc(docRef);
         const email = u.email;
         
-        // 1. CEK APAKAH USER ADA DI DATABASE UTAMA
+        // 1. USER SUDAH ADA DI DATABASE UTAMA
         if (docSnap.exists()) {
           const d = docSnap.data();
-          console.log("User data found:", d);
-
-          // Force upgrade Super Admin jika belum role yang benar
+          
+          // Force upgrade ke super_admin jika emailnya masuk list
           if (SUPER_ADMIN_EMAILS.includes(email) && d.role !== 'super_admin') {
-             console.log("Promoting to Super Admin...");
              await updateDoc(docRef, { role: 'super_admin' });
              setUserData({ ...d, role: 'super_admin' });
           } else {
              setUserData(d);
           }
 
-          // Redirect Logic berdasarkan kelengkapan profil
+          // Redirect Logic
           if (!d.isProfileComplete) {
-             console.log("Redirecting to Profile Setup");
              setView('profile-setup');
              setProfileForm({ username: u.displayName || '', school: d.school || '', city: d.city || '' });
           } else {
-             console.log("Redirecting to Dashboard");
              setView('dashboard');
           }
           
         } else {
-          // 2. USER TIDAK ADA DI DATABASE
-          console.log("User not found in DB.");
-          
+          // 2. USER BELUM ADA DI DATABASE
           if(SUPER_ADMIN_EMAILS.includes(email)) {
              // === SUPER ADMIN FLOW: BUAT AKUN BARU ===
-             console.log("Creating Super Admin Account...");
              const newAdmin = {
                 email: u.email, 
-                displayName: u.displayName, 
-                photoURL: u.photoURL,
+                displayName: u.displayName || "Super Admin", 
+                photoURL: u.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.email}`,
                 role: 'super_admin', 
                 isProfileComplete: false, // Force isi profil
                 nameChangeCount: 0, 
@@ -362,7 +366,7 @@ export default function App() {
                 snaps.forEach(async (doc) => await deleteDoc(doc.ref));
 
                 setUserData(newAdmin);
-                setView('profile-setup'); // Paksa isi profil dulu
+                setView('profile-setup');
                 setProfileForm({ username: u.displayName || '', school: '', city: '' });
                 showToast("Selamat Datang Super Admin! Silakan lengkapi profil.");
              } catch (e) {
@@ -371,21 +375,20 @@ export default function App() {
              }
           } else {
              // === NORMAL USER FLOW ===
-             console.log("Normal user, checking pending status...");
              const q = query(collection(db, 'pending_users'), where('email', '==', email));
              const querySnap = await getDocs(q);
              
              if (querySnap.empty) {
                  await addDoc(collection(db, 'pending_users'), {
                      email, 
-                     displayName: u.displayName, 
-                     photoURL: u.photoURL,
+                     displayName: u.displayName || "New User", 
+                     photoURL: u.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.email}`,
                      date: new Date().toLocaleDateString(), 
                      uid: u.uid
                  });
              }
              
-             // KICK OUT
+             // Kick out
              await signOut(auth);
              setUserData(null);
              setView('landing');
@@ -393,12 +396,12 @@ export default function App() {
           }
         }
       } else {
-        // NO USER
+        // No User
         setUserData(null);
         setView('landing');
       }
       
-      // FINISH CHECKING
+      // Stop Loading
       setIsAuthChecking(false);
       setLoadingLogin(false);
     });
@@ -452,25 +455,35 @@ export default function App() {
   const requestConfirm = (title, message, action, type='danger') => { setConfirmModal({ isOpen: true, title, message, action, type }); };
   const executeConfirmAction = () => { if (confirmModal.action) confirmModal.action(); setConfirmModal({ ...confirmModal, isOpen: false }); };
 
-  // AUTH (POPUP VERSION - MORE STABLE)
-  const handleGoogleLogin = async () => {
+  // --- EMAIL/PASSWORD AUTH HANDLER ---
+  const handleEmailAuth = async (e) => {
+    e.preventDefault();
     setLoadingLogin(true);
     setShowPendingAlert(false);
+
     try {
-        await signInWithPopup(auth, googleProvider);
-        // Logic lanjutan akan ditangani oleh onAuthStateChanged
-    } catch (err) {
-        console.error("Login error:", err);
-        setLoadingLogin(false);
-        if (err.code !== 'auth/popup-closed-by-user') {
-            showToast("Login Gagal: " + err.message, "error");
+        if (isRegistering) {
+            await createUserWithEmailAndPassword(auth, authEmail, authPassword);
+            // onAuthStateChanged akan handle logic create user/pending
+        } else {
+            await signInWithEmailAndPassword(auth, authEmail, authPassword);
+            // onAuthStateChanged akan handle logic redirect
         }
+    } catch (err) {
+        console.error("Auth error:", err);
+        let errorMsg = err.message;
+        if (err.code === 'auth/invalid-credential') errorMsg = "Email atau password salah.";
+        if (err.code === 'auth/email-already-in-use') errorMsg = "Email ini sudah terdaftar.";
+        if (err.code === 'auth/weak-password') errorMsg = "Password terlalu lemah (min 6 karakter).";
+        
+        showToast(errorMsg, "error");
+        setLoadingLogin(false); // Stop loading if error
     }
   };
 
   const handleLogout = async () => { await signOut(auth); setView('landing'); setShowMobileMenu(false); };
 
-  // PROFILE (Using 'user' variable)
+  // PROFILE (Using 'user' consistent variable)
   const handleProfileSubmit = async () => {
       try {
           await updateDoc(doc(db, 'users', user.uid), {
@@ -483,6 +496,7 @@ export default function App() {
           const updatedDoc = await getDoc(doc(db, 'users', user.uid));
           setUserData(updatedDoc.data());
           setView('dashboard');
+          sendOneSignalNotification('mobile_push', 'Kamu berhasil login Roboedu Studio');
           showToast(`Selamat datang, ${profileForm.username}`);
       } catch (e) { 
         console.error(e);
@@ -547,7 +561,7 @@ export default function App() {
   const handleReviewProposal = (isAcc, feedback) => { if(isAcc) { handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Approved', feedback: '' }); sendOneSignalNotification('creator', `Konsep DISETUJUI.`, 'Tim 5'); } else { if (!feedback) return showToast("Isi pesan!", "error"); handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Revision', feedback }); sendOneSignalNotification('creator', `REVISI Konsep: ${feedback}`, 'Tim 5'); } };
   const handleRePropose = () => { handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Pending' }); sendOneSignalNotification('supervisor', `Pengajuan ULANG: "${activeProject.title}"`, 'Tim 5'); };
   const handleSubmitFinalTim5 = () => { requestConfirm("Yakin Submit?", "Project selesai.", () => { handleUpdateProjectFirestore(activeProject.id, { status: "Completed", progress: 100, completedAt: new Date().toISOString() }); sendOneSignalNotification('supervisor', `FINAL SUBMIT Tim 5: ${activeProject.title}`, 'Tim 5'); setView('dashboard'); }, 'neutral'); };
-  const handleAddAsset = async () => { if(!newAssetForm.title) return; await addDoc(collection(db, 'assets'), { ...newAssetForm, date: new Date().toLocaleDateString() }); setIsAddAssetOpen(false); showToast("Aset Ditambah"); };
+  const handleAddAsset = () => { if(!newAssetForm.title) return; await addDoc(collection(db, 'assets'), { ...newAssetForm, date: new Date().toLocaleDateString() }); setIsAddAssetOpen(false); showToast("Aset Ditambah"); };
   const handleDeleteAsset = (id) => { requestConfirm("Hapus Aset?", "Permanen.", async () => { await deleteDoc(doc(db, 'assets', id)); showToast("Aset Dihapus"); }); };
   const handleSaveNews = async () => { if (newsForm.id) { await updateDoc(doc(db, 'news', newsForm.id), newsForm); } setIsEditNewsOpen(false); showToast("Berita Update"); };
   const handleSaveLogo = async () => { await setDoc(doc(db, 'site_config', 'main'), { logo: logoForm }, { merge: true }); setIsEditLogoOpen(false); showToast("Logo Update"); };
@@ -633,7 +647,7 @@ export default function App() {
                                 <div className="absolute bottom-0 right-0 w-3 h-3 bg-white rounded-full border border-slate-200 flex items-center justify-center"><Settings size={8} className="text-slate-500"/></div>
                             </button>
                         )}
-                        {!userData?.isProfileComplete && <img src={user.photoURL} className="w-10 h-10 rounded-full border-2 border-slate-200 bg-slate-100 object-cover"/>}
+                        {!userData?.isProfileComplete && <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.email}`} className="w-10 h-10 rounded-full border-2 border-slate-200 bg-slate-100 object-cover"/>}
                         
                         {userData?.role === 'super_admin' && (
                            <button onClick={() => setView('user-management')} className="relative p-2 bg-indigo-50 rounded-full text-indigo-600 hover:bg-indigo-100 transition-colors" title="Manajemen User">
@@ -698,7 +712,7 @@ export default function App() {
         </div>
       )}
 
-      {/* --- CONTENT AREA (SAMA SEPERTI SEBELUMNYA) --- */}
+      {/* --- CONTENT AREA --- */}
       <div className="flex-1 p-4 md:p-8 pb-32 relative z-10 w-full min-h-screen">
         <div className="max-w-7xl mx-auto w-full">
 
@@ -821,9 +835,55 @@ export default function App() {
                             <img src={siteLogo} className="h-16 w-auto object-contain"/>
                             <h1 className="text-2xl font-black text-center text-slate-900 tracking-tight">RoboEdu<span className="text-indigo-600">.Studio</span></h1>
                         </div>
-                        <div className="space-y-4">
-                            <div className="text-center text-slate-400 text-xs font-bold mb-4">LOGIN GOOGLE</div>
-                            <button onClick={handleGoogleLogin} disabled={loadingLogin} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg hover:bg-indigo-700 flex items-center justify-center gap-3">{loadingLogin ? <Loader2 className="animate-spin"/> : <Shield size={20}/>} Sign in with Google</button>
+                        
+                        {/* EMAIL PASSWORD FORM */}
+                        <form onSubmit={handleEmailAuth} className="space-y-4">
+                            <div>
+                                <label className="block text-left text-xs font-bold text-slate-400 mb-1 ml-1">Email</label>
+                                <div className="relative">
+                                    <input 
+                                        type="email" 
+                                        required
+                                        className="w-full p-4 pl-12 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-200" 
+                                        placeholder="user@sekolah.id" 
+                                        value={authEmail} 
+                                        onChange={e => setAuthEmail(e.target.value)}
+                                    />
+                                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                                </div>
+                            </div>
+                            
+                            <div>
+                                <label className="block text-left text-xs font-bold text-slate-400 mb-1 ml-1">Password</label>
+                                <div className="relative">
+                                    <input 
+                                        type="password" 
+                                        required
+                                        className="w-full p-4 pl-12 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-200" 
+                                        placeholder="••••••••" 
+                                        value={authPassword} 
+                                        onChange={e => setAuthPassword(e.target.value)}
+                                    />
+                                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                                </div>
+                            </div>
+
+                            <button type="submit" disabled={loadingLogin} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg hover:bg-indigo-700 flex items-center justify-center gap-3">
+                                {loadingLogin ? <Loader2 className="animate-spin"/> : <Shield size={20}/>} 
+                                {isRegistering ? "Daftar Akun Baru" : "Masuk"}
+                            </button>
+                        </form>
+
+                        <div className="mt-6 pt-6 border-t border-slate-100">
+                            <p className="text-xs text-slate-500 font-medium mb-2">
+                                {isRegistering ? "Sudah punya akun?" : "Belum punya akun?"}
+                            </p>
+                            <button 
+                                onClick={() => setIsRegistering(!isRegistering)} 
+                                className="text-indigo-600 font-bold text-sm hover:underline"
+                            >
+                                {isRegistering ? "Login Sekarang" : "Daftar Sekarang"}
+                            </button>
                         </div>
                     </div>
                     <button onClick={() => setView('landing')} className="mt-8 flex items-center gap-2 text-slate-400 text-xs font-bold hover:text-indigo-600 transition-colors"><ChevronLeft size={14}/> Kembali ke Beranda</button>
@@ -1387,6 +1447,7 @@ export default function App() {
                 <span className="bg-indigo-50 text-indigo-600 px-3 py-1 rounded-lg text-[10px] font-bold uppercase mb-4 inline-block">{selectedNews.category}</span>
                 <h2 className="text-2xl font-black text-slate-800 mb-4 leading-tight">{selectedNews.title}</h2>
                 <div className="text-sm text-slate-600 leading-relaxed bg-slate-50 p-6 rounded-[2rem] mb-4 border border-slate-100 font-medium whitespace-pre-line">{selectedNews.content}</div>
+                <div className="text-xs text-slate-400 font-bold text-right">Diposting: {selectedNews.date}</div>
             </div>
         )}
       </Modal>
