@@ -357,6 +357,15 @@ export default function App() {
                     const docSnap = await getDoc(docRef);
                     if (docSnap.exists()) {
                         const d = docSnap.data();
+
+                        // --- AUTO-FIX: Typo 'tema-' -> 'team-' ---
+                        if (d.teamId && typeof d.teamId === 'string' && d.teamId.includes('tema-')) {
+                            const fixedId = d.teamId.replace('tema-', 'team-');
+                            console.log(`🔵 FIXING TYPO: ${d.teamId} -> ${fixedId}`);
+                            await updateDoc(docRef, { teamId: fixedId });
+                            d.teamId = fixedId; // Use fixed value locally
+                        }
+
                         if (SUPER_ADMIN_EMAILS.includes(u.email) && d.role !== 'super_admin') {
                             await updateDoc(docRef, { role: 'super_admin' });
                             setUserData({ ...d, role: 'super_admin' });
