@@ -712,13 +712,96 @@ export default function App() {
     };
     const handleRemoveImage = (index) => { const newImages = [...activeProject.previewImages]; newImages[index] = null; handleUpdateProjectFirestore(activeProject.id, { previewImages: newImages }); };
     const handleImageSubmit = async () => { if (imageUploadState.slotIndex !== null) { const newImages = [...activeProject.previewImages]; newImages[imageUploadState.slotIndex] = imageUploadState.urlInput; await handleUpdateProjectFirestore(activeProject.id, { previewImages: newImages }); setImageUploadState({ isOpen: false, slotIndex: null, urlInput: '' }); showToast("Foto tersimpan!"); } };
-    const handleSubmitPreview = (proj) => { if (!proj.previewLink) return showToast("Link kosong!", "error"); handleUpdateProjectFirestore(proj.id, { status: "Preview Submitted" }); sendOneSignalNotification('supervisor', `Review preview: "${proj.title}"`, TEAMS.find(t => t.id === proj.teamId)?.name); };
-    const handleApprovalAction = (isApproved, feedback) => { if (!isApproved && !feedback) return showToast("Isi revisi!", "error"); handleUpdateProjectFirestore(activeProject.id, { isApproved, status: isApproved ? "Approved" : "Revision Needed", feedback: isApproved ? "" : feedback }); sendOneSignalNotification('creator', isApproved ? "Preview Approved" : "Revisi Baru", TEAMS.find(t => t.id === activeProject.teamId)?.name); };
-    const handleSubmitFinalRegular = (proj) => { if (!proj.finalLink) return showToast("Link kosong!", "error"); requestConfirm("Submit Final?", "Project ke Arsip.", () => { handleUpdateProjectFirestore(proj.id, { status: "Completed", progress: 100, completedAt: new Date().toISOString() }); sendOneSignalNotification('supervisor', `FINAL SUBMIT: ${proj.title}`, TEAMS.find(t => t.id === proj.teamId)?.name); setView('dashboard'); }, 'neutral'); };
-    const handleProposeConcept = () => { if (!activeProject.finalLink) return showToast("Isi link!", "error"); handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Pending' }); sendOneSignalNotification('supervisor', `Pengajuan: ${activeProject.title}`, 'Tim 5'); };
-    const handleReviewProposal = (isAcc, feedback) => { if (isAcc) { handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Approved', feedback: '' }); sendOneSignalNotification('creator', `Konsep DISETUJUI.`, 'Tim 5'); } else { if (!feedback) return showToast("Isi pesan!", "error"); handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Revision', feedback }); sendOneSignalNotification('creator', `REVISI Konsep: ${feedback}`, 'Tim 5'); } };
-    const handleRePropose = () => { handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Pending' }); sendOneSignalNotification('supervisor', `Pengajuan ULANG: "${activeProject.title}"`, 'Tim 5'); };
-    const handleSubmitFinalTim5 = () => { requestConfirm("Yakin Submit?", "Project selesai.", () => { handleUpdateProjectFirestore(activeProject.id, { status: "Completed", progress: 100, completedAt: new Date().toISOString() }); sendOneSignalNotification('supervisor', `FINAL SUBMIT Tim 5: ${activeProject.title}`, 'Tim 5'); setView('dashboard'); }, 'neutral'); };
+    // --- NOTIFICATION HELPERS ---
+    const getTeamName = (proj) => TEAMS.find(t => t.id === proj.teamId)?.name || 'Unknown Team';
+
+    const handleSubmitPreview = (proj) => {
+        if (!proj.previewLink) return showToast("Link kosong!", "error");
+
+        // VALIDATION: Must be Google Drive
+        if (!proj.previewLink.includes('drive.google.com') && !proj.previewLink.includes('docs.google.com')) {
+            return showToast("Wajib Link Google Drive!", "error");
+        }
+
+        requestConfirm("Kirim Preview?", "Notifikasi akan dikirim ke Supervisor.", () => {
+            handleUpdateProjectFirestore(proj.id, { status: "Preview Submitted" });
+            // 1. Notify Supervisor
+            sendOneSignalNotification('supervisor', `Review preview: "${proj.title}"`, getTeamName(proj));
+            // 2. Notify Creator (Confirmation)
+            sendOneSignalNotification('creator', `Preview Terkirim: "${proj.title}"`, getTeamName(proj));
+
+            showToast("Preview Terkirim ke Supervisor! 📤");
+        }, 'neutral');
+    };
+
+    const handleApprovalAction = (isApproved, feedback) => {
+        if (!isApproved && !feedback) return showToast("Isi revisi!", "error");
+
+        const statusMsg = isApproved ? "Preview Approved" : "Revisi Baru";
+
+        requestConfirm(isApproved ? "Approve Preview?" : "Kirim Revisi?", `Tim ${getTeamName(activeProject)} akan dapat notifikasi.`, () => {
+            handleUpdateProjectFirestore(activeProject.id, {
+                isApproved,
+                status: isApproved ? "Approved" : "Revision Needed",
+                feedback: isApproved ? "" : feedback
+            });
+            sendOneSignalNotification('creator', statusMsg, getTeamName(activeProject));
+            showToast(isApproved ? "Approved! Tim diberitahu. ✅" : "Revisi Terkirim! 📢");
+        }, isApproved ? 'success' : 'danger');
+    };
+
+    const handleSubmitFinalRegular = (proj) => {
+        if (!proj.finalLink) return showToast("Link kosong!", "error");
+
+        // VALIDATION: Must be Google Drive
+        if (!proj.finalLink.includes('drive.google.com') && !proj.finalLink.includes('docs.google.com')) {
+            return showToast("Wajib Link Google Drive!", "error");
+        }
+
+        requestConfirm("Submit Final?", "Project akan ditandai SELESAI & Masuk Arsip.", () => {
+            handleUpdateProjectFirestore(proj.id, { status: "Completed", progress: 100, completedAt: new Date().toISOString() });
+            sendOneSignalNotification('supervisor', `FINAL SUBMIT: ${proj.title}`, getTeamName(proj));
+
+            // Notify Creator too (Validation)
+            sendOneSignalNotification('creator', `Sukses Submit Final: ${proj.title}`, getTeamName(proj));
+
+            setView('dashboard');
+            showToast("Project Selesai! 🎉");
+        }, 'neutral');
+    };
+
+    const handleProposeConcept = () => {
+        if (!activeProject.finalLink) return showToast("Isi link!", "error");
+        handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Pending' });
+        sendOneSignalNotification('supervisor', `Pengajuan: ${activeProject.title}`, 'Tim 5');
+        sendOneSignalNotification('creator', `Konsep Diajukan: ${activeProject.title}`, 'Tim 5');
+    };
+
+    const handleReviewProposal = (isAcc, feedback) => {
+        if (isAcc) {
+            handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Approved', feedback: '' });
+            sendOneSignalNotification('creator', `Konsep DISETUJUI.`, 'Tim 5');
+        } else {
+            if (!feedback) return showToast("Isi pesan!", "error");
+            handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Revision', feedback });
+            sendOneSignalNotification('creator', `REVISI Konsep: ${feedback}`, 'Tim 5');
+        }
+    };
+
+    const handleRePropose = () => {
+        handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Pending' });
+        sendOneSignalNotification('supervisor', `Pengajuan ULANG: "${activeProject.title}"`, 'Tim 5');
+        sendOneSignalNotification('creator', `Revisi Dikirim: "${activeProject.title}"`, 'Tim 5');
+    };
+
+    const handleSubmitFinalTim5 = () => {
+        requestConfirm("Yakin Submit?", "Project selesai.", () => {
+            handleUpdateProjectFirestore(activeProject.id, { status: "Completed", progress: 100, completedAt: new Date().toISOString() });
+            sendOneSignalNotification('supervisor', `FINAL SUBMIT Tim 5: ${activeProject.title}`, 'Tim 5');
+            sendOneSignalNotification('creator', `Sukses Submit Final: ${activeProject.title}`, 'Tim 5');
+            setView('dashboard');
+        }, 'neutral');
+    };
     const handleAddAsset = async () => { if (!newAssetForm.title) return; await addDoc(collection(db, 'assets'), { ...newAssetForm, date: new Date().toLocaleDateString() }); setIsAddAssetOpen(false); showToast("Aset Ditambah"); };
     const handleDeleteAsset = (id) => { requestConfirm("Hapus Aset?", "Permanen.", async () => { await deleteDoc(doc(db, 'assets', id)); showToast("Aset Dihapus"); }); };
     const handleSaveNews = async () => { if (newsForm.id) { await updateDoc(doc(db, 'news', newsForm.id), newsForm); } setIsEditNewsOpen(false); showToast("Berita Update"); };
