@@ -1391,7 +1391,7 @@ export default function App() {
                             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                                 {projects.filter(p => p.finalLink).map(p => (
                                     <div key={p.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-lg transition-all">
-                                        <div className="flex justify-between mb-4"><span className="text-[10px] bg-slate-100 px-2 py-1 rounded-md font-bold uppercase text-slate-600">{TEAMS.find(t => t.id === p.teamId)?.name}</span><span className="text-[10px] text-slate-400 font-bold">{p.createdAt}</span></div>
+                                        <div className="flex justify-between mb-4"><span className="text-[10px] bg-slate-100 px-2 py-1 rounded-md font-bold uppercase text-slate-600">{TEAMS.find(t => t.id === p.teamId)?.name}</span><span className="text-[10px] text-slate-400 font-bold">{p.createdAt?.toDate ? p.createdAt.toDate().toLocaleDateString() : p.createdAt}</span></div>
                                         <h3 className="font-bold text-slate-800 text-lg mb-6 leading-tight">{p.title}</h3>
                                         <a href={p.finalLink} target="_blank" className="flex items-center justify-center gap-2 w-full py-3 bg-emerald-50 text-emerald-600 rounded-xl text-sm font-bold border border-emerald-100 hover:bg-emerald-100 transition-colors"><LinkIcon size={16} /> Buka Link Drive</a>
                                     </div>
@@ -1429,7 +1429,9 @@ export default function App() {
                                                 <span className="text-[10px] bg-emerald-100 text-emerald-600 px-3 py-1 rounded-full font-bold uppercase flex items-center gap-1">
                                                     <CheckCircle2 size={10} /> Completed
                                                 </span>
-                                                <span className="text-[10px] text-slate-400 font-bold">{p.createdAt}</span>
+                                                <span className="text-[10px] text-slate-400 font-bold">
+                                                    {p.createdAt?.toDate ? p.createdAt.toDate().toLocaleDateString() : p.createdAt}
+                                                </span>
                                             </div>
                                             <div className="flex items-center gap-2 mb-2">
                                                 <span className="text-[10px] bg-slate-100 px-2 py-1 rounded font-bold text-slate-600">
