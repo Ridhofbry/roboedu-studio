@@ -1852,3 +1852,18 @@ export default function App() {
                 </div>
             </Modal>
 
+            {/* --- DETAIL BERITA MODAL --- */}
+            <Modal isOpen={!!selectedNews} onClose={() => setSelectedNews(null)} title="Detail Berita">
+                {selectedNews && (
+                    <div className="animate-[fadeIn_0.2s]">
+                        <span className="bg-indigo-50 text-indigo-600 px-3 py-1 rounded-lg text-[10px] font-bold uppercase mb-4 inline-block">{selectedNews.category}</span>
+                        <h2 className="text-2xl font-black text-slate-800 mb-4 leading-tight">{selectedNews.title}</h2>
+                        <div className="text-sm text-slate-600 leading-relaxed bg-slate-50 p-6 rounded-[2rem] mb-4 border border-slate-100 font-medium whitespace-pre-line">{selectedNews.content}</div>
+                        <div className="text-xs text-slate-400 font-bold text-right">Diposting: {selectedNews.date}</div>
+                    </div>
+                )}
+            </Modal>
+
+        </div>
+    );
+}
