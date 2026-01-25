@@ -1547,15 +1547,26 @@ export default function App() {
                                 }
                             }}
                         />
-                        <button
-                            type="button"
-                            onClick={() => document.getElementById('photo-upload').click()}
-                            className="w-full p-4 bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 flex flex-col items-center justify-center gap-2 hover:bg-slate-100 transition-colors cursor-pointer"
-                        >
-                            <Upload size={24} />
-                            <span className="text-sm font-medium">Klik untuk pilih foto dari Galeri</span>
-                            <span className="text-[10px] text-slate-400">Maksimal 2MB (JPG/PNG)</span>
-                        </button>
+                        <div className="flex items-center gap-4 mb-3">
+                            <div className="w-16 h-16 rounded-full bg-slate-100 border border-slate-200 overflow-hidden shrink-0">
+                                {editProfileData.photoURL ? (
+                                    <img src={editProfileData.photoURL} className="w-full h-full object-cover" alt="Preview" />
+                                ) : (
+                                    <div className="w-full h-full flex items-center justify-center text-slate-300"><User size={24} /></div>
+                                )}
+                            </div>
+                            <div className="flex-1">
+                                <button
+                                    type="button"
+                                    onClick={() => document.getElementById('photo-upload').click()}
+                                    className="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-200 transition-colors flex items-center gap-2"
+                                >
+                                    <Camera size={14} /> Pilih Foto Baru
+                                </button>
+                                <p className="text-[10px] text-slate-400 mt-1 ml-1">JPG, PNG max 2MB</p>
+                            </div>
+                        </div>
+
                         {editProfileData.photoURL !== userData?.photoURL && (
                             <div className="mt-2 flex items-center justify-center gap-2 text-emerald-500">
                                 <img src={editProfileData.photoURL} className="w-10 h-10 rounded-full border-2 border-emerald-200" />
@@ -1565,7 +1576,7 @@ export default function App() {
                     </div>
                     <button onClick={handleUpdateProfile} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold transition-all shadow-lg flex items-center justify-center gap-2"><Save size={18} /> Simpan Profil</button>
                 </div>
-            </Modal>
+            </Modal >
 
             {/* --- MODAL APPROVAL USER --- */}
             {/* Ensure this modal is rendered at root level of return */}
@@ -1628,6 +1639,6 @@ export default function App() {
                 )}
             </Modal>
 
-        </div>
+        </div >
     );
 }
