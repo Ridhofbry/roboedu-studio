@@ -1419,7 +1419,7 @@ export default function App() {
                             <div className="flex justify-between items-end mb-8">
                                 <div>
                                     <button onClick={() => setView('dashboard')} className="mb-2 text-xs font-bold text-slate-400 hover:text-indigo-600 flex items-center gap-1"><ChevronLeft size={14} /> Kembali</button>
-                                    <h2 className="text-3xl font-black text-slate-800">Arsip Project</h2>
+                                    <h2 className="text-3xl font-black text-slate-800">Arsip Project (Fixed)</h2>
                                     <p className="text-sm text-slate-500 mt-1">Project yang sudah selesai</p>
                                 </div>
                             </div>
