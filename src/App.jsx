@@ -446,12 +446,34 @@ export default function App() {
     // --- DATA LISTENERS ---
     useEffect(() => {
         if (!db) return;
-        const unsubProj = onSnapshot(collection(db, 'projects'), (s) => setProjects(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-        const unsubNews = onSnapshot(collection(db, 'news'), (s) => setNews(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-        const unsubAssets = onSnapshot(collection(db, 'assets'), (s) => setAssets(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+
+        // Error Handler
+        const handleDbError = (context) => (error) => {
+            console.error(`Error fetching ${context}:`, error);
+            if (error.code === 'permission-denied') {
+                showToast(`Akses Ditolak: Gagal memuat ${context}. Cek Rules!`, "error");
+            }
+        };
+
+        const unsubProj = onSnapshot(collection(db, 'projects'),
+            (s) => setProjects(s.docs.map(d => ({ id: d.id, ...d.data() }))),
+            handleDbError("Projects")
+        );
+
+        const unsubNews = onSnapshot(collection(db, 'news'),
+            (s) => setNews(s.docs.map(d => ({ id: d.id, ...d.data() }))),
+            handleDbError("News")
+        );
+
+        const unsubAssets = onSnapshot(collection(db, 'assets'),
+            (s) => setAssets(s.docs.map(d => ({ id: d.id, ...d.data() }))),
+            handleDbError("Assets")
+        );
+
         const unsubConfig = onSnapshot(doc(db, 'site_config', 'main'), (d) => {
             if (d.exists()) { const data = d.data(); if (data.logo) setSiteLogo(data.logo); if (data.weekly) setWeeklyContent(data.weekly); }
-        });
+        }, handleDbError("Config"));
+
         return () => { unsubProj(); unsubNews(); unsubAssets(); unsubConfig(); };
     }, []);
 
@@ -1149,15 +1171,20 @@ export default function App() {
                                     ))}
                             </div>
 
+
                             {/* Empty State with Debug Info */}
-                            {projects.filter(p => p.status !== 'Completed' && (userData?.role === 'supervisor' || userData?.role === 'super_admin' ? (activeTeamId ? String(p.teamId) === String(activeTeamId) : true) : String(p.teamId) === String(userData?.teamId))).length === 0 && (
+                            {projects.filter(p => p.status !== 'Completed' && (userData?.role === 'supervisor' || userData?.role === 'super_admin' ? (activeTeamId ? String(p.teamId).toLowerCase().trim() === String(activeTeamId).toLowerCase().trim() : true) : String(p.teamId).toLowerCase().trim() === String(userData?.teamId).toLowerCase().trim())).length === 0 && (
                                 <div className="text-center py-12 text-slate-400">
                                     <FolderOpen size={48} className="mx-auto mb-4 opacity-50" />
-                                    <p className="font-bold">Belum ada project aktif.</p>
-                                    <p className="text-xs mt-2">Pastikan project sudah Assign ke Tim yang benar.</p>
-                                    <p className="text-[10px] mt-4 font-mono opacity-50 bg-slate-100 inline-block px-2 py-1 rounded">
-                                        Debug: Role={userData?.role} | Me={userData?.teamId || 'NULL'} | Team={activeTeamId || 'ALL'}
-                                    </p>
+                                    <p className="font-bold">Belum ada project aktif di Tim ini.</p>
+                                    <p className="text-xs mt-2 max-w-xs mx-auto">Sistem hanya menampilkan Project yang memiliki <b>teamId</b> sama persis dengan akun Anda.</p>
+                                    <div className="text-[10px] mt-4 font-mono opacity-50 bg-slate-100 inline-block px-4 py-2 rounded text-left">
+                                        <p>Debug Info:</p>
+                                        <p>My Account Team: "{userData?.teamId}"</p>
+                                        <p>Total Projects in DB: {projects.length}</p>
+                                        <p>Sample Project Team: "{projects[0]?.teamId || 'N/A'}"</p>
+                                        <p>Matching Status: {projects.some(p => String(p.teamId).trim() === String(userData?.teamId).trim()) ? "MATCH FOUND (Hidden?)" : "NO MATCH"}</p>
+                                    </div>
                                 </div>
                             )}
                         </div>
