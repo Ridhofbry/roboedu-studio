@@ -484,25 +484,40 @@ export default function App() {
   const handleLogout = async () => { await signOut(auth); setView('landing'); setShowMobileMenu(false); };
 
   // PROFILE (Using 'user' consistent variable)
+
   const handleProfileSubmit = async () => {
       try {
+          // 1. Update ke Firestore
           await updateDoc(doc(db, 'users', user.uid), {
               displayName: profileForm.username,
               school: profileForm.school,
               city: profileForm.city,
-              isProfileComplete: true,
+              isProfileComplete: true, // Pastikan flag ini true
               bio: userData?.bio || "Member Baru"
           });
-          const updatedDoc = await getDoc(doc(db, 'users', user.uid));
-          setUserData(updatedDoc.data());
-          setView('dashboard');
-          sendOneSignalNotification('mobile_push', 'Kamu berhasil login Roboedu Studio');
-          showToast(`Selamat datang, ${profileForm.username}`);
+          const updatedDocSnap = await getDoc(doc(db, 'users', user.uid));
+          
+          if (updatedDocSnap.exists()) {
+              const updatedData = updatedDocSnap.data();
+              
+              // 3. Update State Lokal DULU
+              setUserData(updatedData);
+              
+              // 4. Baru pindah halaman
+              setView('dashboard');
+              
+              sendOneSignalNotification('mobile_push', 'Kamu berhasil login Roboedu Studio');
+              showToast(`Selamat datang, ${profileForm.username}`);
+          } else {
+              throw new Error("Gagal mengambil data user terbaru.");
+          }
+
       } catch (e) { 
-        console.error(e);
-        showToast("Gagal simpan profil", "error"); 
+        console.error("Profile submit error:", e);
+        showToast("Gagal simpan profil: " + e.message, "error"); 
       }
   };
+
 
   const handleUpdateProfile = async () => {
       try {
