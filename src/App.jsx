@@ -206,10 +206,22 @@ const WeeklyBotReport = ({ projects }) => {
         const now = new Date(); const currentDay = now.getDay(); const diffToMonday = currentDay === 0 ? 6 : currentDay - 1; 
         const startOfWeek = new Date(now); startOfWeek.setHours(0, 0, 0, 0); startOfWeek.setDate(now.getDate() - diffToMonday);
         let completed = 0; let late = 0; let onTime = 0;
-        projects.forEach(p => { if (p.status === 'Completed' && p.completedAt) { const completedDate = new Date(p.completedAt); if (completedDate >= startOfWeek) { completed++; if (p.deadline) { const deadline = new Date(p.deadline); if (completedDate > deadline) late++; else onTime++; } else { onTime++; } } } });
+        projects.forEach(p => {
+            if (p.status === 'Completed' && p.completedAt) {
+                const completedDate = new Date(p.completedAt);
+                if (completedDate >= startOfWeek) {
+                    completed++;
+                    if (p.deadline) { const deadline = new Date(p.deadline); if (completedDate > deadline) late++; else onTime++; } else { onTime++; }
+                }
+            }
+        });
         return { completed, late, onTime };
     }, [projects]);
-    const getMessage = () => { if (report.completed === 0) return "Minggu ini belum ada project selesai. Ayo semangat tim!"; if (report.late > 0) return `Minggu ini produktif, namun ada ${report.late} project yang melebihi deadline.`; return `Performa Luar Biasa! ${report.completed} Project selesai tepat waktu minggu ini.`; };
+    const getMessage = () => {
+        if (report.completed === 0) return "Minggu ini belum ada project selesai. Ayo semangat tim!";
+        if (report.late > 0) return `Minggu ini produktif, namun ada ${report.late} project yang melebihi deadline. Perhatikan ketepatan waktu!`;
+        return `Performa Luar Biasa! ${report.completed} Project selesai tepat waktu minggu ini. Pertahankan!`;
+    };
     return (
         <div className="bg-indigo-900 text-white p-6 rounded-[2.5rem] shadow-xl border border-indigo-700 relative overflow-hidden mb-8">
              <div className="absolute top-0 right-0 p-16 bg-white/10 rounded-full blur-3xl -mr-10 -mt-10"></div>
@@ -227,7 +239,7 @@ const WeeklyBotReport = ({ projects }) => {
 
 export default function App() {
   // State
-  const [currentUser, setCurrentUser] = useState(null);
+  const [user, setUser] = useState(null);
   const [userData, setUserData] = useState(null);
   const [view, setView] = useState('landing'); 
   
@@ -307,7 +319,7 @@ export default function App() {
   useEffect(() => {
     if (!auth) return;
     const unsubAuth = onAuthStateChanged(auth, async (u) => {
-      setCurrentUser(u);
+      setUser(u);
       
       if (u) {
         const docRef = doc(db, 'users', u.uid);
@@ -643,7 +655,8 @@ export default function App() {
       }, 'neutral');
   };
   
-  const handleAddAsset = () => {
+  // 5. ASSETS & NEWS & LOGO
+  const handleAddAsset = async () => {
       if(!newAssetForm.title) return;
       await addDoc(collection(db, 'assets'), { ...newAssetForm, date: new Date().toLocaleDateString() });
       setIsAddAssetOpen(false); showToast("Aset Ditambah");
@@ -1393,7 +1406,7 @@ export default function App() {
               <p className="text-sm text-slate-600 mb-6 font-medium leading-relaxed">{confirmModal.message}</p>
               <div className="flex gap-3">
                   <button onClick={() => setConfirmModal({...confirmModal, isOpen: false})} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold">Batal</button>
-                  <button onClick={executeConfirmAction} className={`flex-1 py-3 text-white rounded-xl font-bold ${confirmModal.type === 'danger' ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-600 hover:bg-blue-700'}`}>Ya, Lanjutkan</button>
+                  <button onClick={executeConfirmAction} className={`flex-1 py-3 text-white rounded-xl font-bold ${confirmModal.type === 'danger' ? 'bg-red-500' : 'bg-blue-600'}`}>Ya, Lanjutkan</button>
               </div>
           </div>
       </Modal>
@@ -1436,8 +1449,8 @@ export default function App() {
            
            {/* READ ONLY FIELDS */}
            <div className="grid grid-cols-2 gap-4">
-               <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Sekolah</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={user?.school || '-'} /></div>
-               <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Kota</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={user?.city || '-'} /></div>
+               <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Sekolah</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={userData?.school || '-'} /></div>
+               <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Kota</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={userData?.city || '-'} /></div>
            </div>
 
            <div>
