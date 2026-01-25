@@ -45,7 +45,7 @@ if (API_KEY_EXISTS) {
         auth = getAuth(app);
         db = getFirestore(app);
         googleProvider = new GoogleAuthProvider();
-        // Penting untuk mobile: Local Persistence
+        // Penting untuk mobile: Local Persistence agar tidak logout saat refresh/redirect
         setPersistence(auth, browserLocalPersistence).catch(console.error);
     } catch (error) {
         console.error("Firebase Init Error:", error);
@@ -233,41 +233,51 @@ const WeeklyBotReport = ({ projects }) => {
     );
 };
 
+const RoboLogo = ({ size = 60 }) => (
+  <svg width={size} height={size} viewBox="0 0 100 100" className="overflow-visible drop-shadow-xl">
+    <path d="M50 20 L50 35" stroke="#4f46e5" strokeWidth="4" strokeLinecap="round" />
+    <circle cx="50" cy="15" r="5" fill="#f43f5e" className="animate-pulse" />
+    <rect x="25" y="35" width="50" height="40" rx="10" fill="white" stroke="#4f46e5" strokeWidth="3" />
+    <rect x="30" y="40" width="40" height="30" rx="6" fill="#e0e7ff" />
+    <circle cx="40" cy="55" r="4" fill="#1e1b4b" />
+    <circle cx="60" cy="55" r="4" fill="#1e1b4b" />
+  </svg>
+);
+
 /* ========================================================================
    MAIN APPLICATION
    ======================================================================== */
 
 export default function App() {
-  // State
-  const [user, setUser] = useState(null);
-  const [userData, setUserData] = useState(null);
+  const [user, setUser] = useState(null); // SATU-SATUNYA STATE USER AUTH
+  const [userData, setUserData] = useState(null); // DATA FIRESTORE
   const [view, setView] = useState('landing'); 
   
-  // Realtime Data
+  // Data Containers
   const [projects, setProjects] = useState([]);
   const [news, setNews] = useState([]);
   const [assets, setAssets] = useState([]);
   const [usersList, setUsersList] = useState([]);
   const [pendingUsers, setPendingUsers] = useState([]);
   
-  // Content States
+  // Content
   const [weeklyContent, setWeeklyContent] = useState({ title: "Belum ada highlight", image: "" });
   const [siteLogo, setSiteLogo] = useState("https://lh3.googleusercontent.com/d/1uJHar8EYXpRnL8uaPvhePEHWG-BasH9m");
 
-  // UI States
+  // UI
   const [showPendingAlert, setShowPendingAlert] = useState(false);
   const [loadingLogin, setLoadingLogin] = useState(false);
   const [toast, setToast] = useState(null);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [spotlightIndex, setSpotlightIndex] = useState(0);
 
-  // Selection States
+  // Selection
   const [activeProject, setActiveProject] = useState(null);
   const [activeTeamId, setActiveTeamId] = useState(null);
   const [selectedNews, setSelectedNews] = useState(null);
   const [selectedPendingUser, setSelectedPendingUser] = useState(null);
 
-  // Form States
+  // Forms
   const [profileForm, setProfileForm] = useState({ username: '', school: '', city: '' });
   const [editProfileData, setEditProfileData] = useState({ displayName: '', bio: '', photoURL: '', school: '', city: '' });
   const [newProjectForm, setNewProjectForm] = useState({ title: '', isBigProject: false, teamId: 'team-1', deadline: '' });
@@ -281,7 +291,7 @@ export default function App() {
   const [aiResult, setAiResult] = useState('');
   const [imageUploadState, setImageUploadState] = useState({ isOpen: false, slotIndex: null, urlInput: '' });
 
-  // Modal Toggles
+  // Modals
   const [isAddProjectOpen, setIsAddProjectOpen] = useState(false);
   const [isAddAssetOpen, setIsAddAssetOpen] = useState(false);
   const [isEditLogoOpen, setIsEditLogoOpen] = useState(false);
@@ -315,11 +325,12 @@ export default function App() {
     checkRedirectResult();
   }, []);
 
-  // --- FIREBASE LISTENERS ---
+  // --- FIREBASE LISTENERS (FIXED) ---
   useEffect(() => {
     if (!auth) return;
     const unsubAuth = onAuthStateChanged(auth, async (u) => {
-      setUser(u);
+      console.log("Auth state changed:", u?.email);
+      setUser(u); // Gunakan variabel user yang konsisten
       
       if (u) {
         const docRef = doc(db, 'users', u.uid);
@@ -329,9 +340,11 @@ export default function App() {
         // 1. USER SUDAH ADA DI DATABASE
         if (docSnap.exists()) {
           const d = docSnap.data();
+          console.log("User exists in DB:", d);
           
           // Force upgrade ke super_admin jika emailnya masuk list
           if (SUPER_ADMIN_EMAILS.includes(email) && d.role !== 'super_admin') {
+             console.log("Upgrading to super_admin");
              await updateDoc(docRef, { role: 'super_admin' });
              setUserData({ ...d, role: 'super_admin' });
           } else {
@@ -340,16 +353,22 @@ export default function App() {
 
           // Redirect sesuai status profil
           if (!d.isProfileComplete) {
+             console.log("Profile incomplete -> setup");
              setView('profile-setup');
+             // Pre-fill form jika ada data
              setProfileForm({ username: u.displayName || '', school: d.school || '', city: d.city || '' });
           } else {
+             console.log("Profile complete -> dashboard");
              setView('dashboard');
           }
           
         } else {
           // 2. USER BELUM ADA DI DATABASE
+          console.log("User NOT in DB");
+          
           if(SUPER_ADMIN_EMAILS.includes(email)) {
              // SUPER ADMIN: BUAT AKUN LANGSUNG
+             console.log("Creating super admin account");
              const newAdmin = {
                 email: u.email, 
                 displayName: u.displayName, 
@@ -375,6 +394,8 @@ export default function App() {
              showToast("Welcome Super Admin!");
           } else {
              // BUKAN SUPER ADMIN: PENDING & LOGOUT
+             console.log("Adding to pending");
+             
              const q = query(collection(db, 'pending_users'), where('email', '==', email));
              const querySnap = await getDocs(q);
              
@@ -394,9 +415,10 @@ export default function App() {
              setShowPendingAlert(true);
           }
         }
+        
         setLoadingLogin(false);
       } else {
-        // NO USER LOGGED IN
+        console.log("No user logged in");
         setUserData(null);
         setView('landing');
         setLoadingLogin(false);
@@ -476,10 +498,10 @@ export default function App() {
 
   const handleLogout = async () => { await signOut(auth); setView('landing'); setShowMobileMenu(false); };
 
-  // 2. PROFILE
+  // 2. PROFILE (FIXED: Using 'user' instead of 'currentUser')
   const handleProfileSubmit = async () => {
       try {
-          await updateDoc(doc(db, 'users', currentUser.uid), {
+          await updateDoc(doc(db, 'users', user.uid), {
               displayName: profileForm.username,
               school: profileForm.school,
               city: profileForm.city,
@@ -488,7 +510,7 @@ export default function App() {
           });
           
           // Force refresh user data
-          const updatedDoc = await getDoc(doc(db, 'users', currentUser.uid));
+          const updatedDoc = await getDoc(doc(db, 'users', user.uid));
           setUserData(updatedDoc.data());
           setView('dashboard');
           
@@ -507,7 +529,7 @@ export default function App() {
               if (newCount >= 2) return showToast("Batas ganti nama habis!", "error");
               newCount++;
           }
-          await updateDoc(doc(db, 'users', user.uid), {
+          await updateDoc(doc(db, 'users', user.uid), { // FIXED: using 'user'
               displayName: editProfileData.displayName,
               bio: editProfileData.bio,
               photoURL: editProfileData.photoURL,
@@ -517,40 +539,7 @@ export default function App() {
       } catch(e) { showToast("Gagal update", "error"); }
   };
 
-  // 3. ADMIN ACTIONS
-  const handleConfirmApproval = async () => {
-      if(!selectedPendingUser) return;
-      try {
-          const newUser = {
-              uid: selectedPendingUser.uid, 
-              email: selectedPendingUser.email,
-              displayName: selectedPendingUser.displayName,
-              photoURL: selectedPendingUser.photoURL,
-              role: approvalForm.role,
-              teamId: approvalForm.role === 'creator' ? approvalForm.teamId : (approvalForm.role === 'tim_khusus' ? 'team-5' : null),
-              isProfileComplete: false,
-              nameChangeCount: 0
-          };
-          
-          await setDoc(doc(db, 'users', selectedPendingUser.uid), newUser);
-          await deleteDoc(doc(db, 'pending_users', selectedPendingUser.id));
-          
-          setIsApprovalModalOpen(false); setSelectedPendingUser(null);
-          showToast("User Disetujui!");
-      } catch (e) {
-          console.error(e);
-          showToast("Gagal Approve", "error");
-      }
-  };
-
-  const handleRejectUser = (user) => {
-      requestConfirm("Tolak?", "Hapus user.", async () => {
-          await deleteDoc(doc(db, 'pending_users', user.id));
-          showToast("Ditolak.");
-      });
-  };
-
-  // 4. PROJECTS
+  // 3. PROJECTS & TASKS
   const handleAddProject = async () => {
       if(!newProjectForm.title) return showToast("Isi judul!", "error");
       const p = {
@@ -655,6 +644,39 @@ export default function App() {
       }, 'neutral');
   };
   
+  // 4. ADMIN MGMT
+  const handleConfirmApproval = async () => {
+      if(!selectedPendingUser) return;
+      try {
+          const newUser = {
+              uid: selectedPendingUser.uid, 
+              email: selectedPendingUser.email,
+              displayName: selectedPendingUser.displayName,
+              photoURL: selectedPendingUser.photoURL,
+              role: approvalForm.role,
+              teamId: approvalForm.role === 'creator' ? approvalForm.teamId : (approvalForm.role === 'tim_khusus' ? 'team-5' : null),
+              isProfileComplete: false,
+              nameChangeCount: 0
+          };
+          
+          await setDoc(doc(db, 'users', selectedPendingUser.uid), newUser);
+          await deleteDoc(doc(db, 'pending_users', selectedPendingUser.id));
+          
+          setIsApprovalModalOpen(false); setSelectedPendingUser(null);
+          showToast("User Disetujui!");
+      } catch (e) {
+          console.error(e);
+          showToast("Gagal Approve", "error");
+      }
+  };
+
+  const handleRejectUser = (u) => {
+      requestConfirm("Tolak?", "Hapus user.", async () => {
+          await deleteDoc(doc(db, 'pending_users', u.id));
+          showToast("Ditolak.");
+      });
+  };
+
   // 5. ASSETS & NEWS & LOGO
   const handleAddAsset = async () => {
       if(!newAssetForm.title) return;
@@ -962,7 +984,7 @@ export default function App() {
                         </div>
                         <div className="space-y-4">
                             <div className="text-center text-slate-400 text-xs font-bold mb-4">LOGIN GOOGLE</div>
-                            <button onClick={handleGoogleLogin} disabled={loadingLogin} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg hover:bg-indigo-700 flex items-center justify-center gap-3">{loadingLogin ? <Loader2 className="animate-spin"/> : <Shield size={20}/>} Sign in with Google</button>
+                            <button onClick={handleGoogleLogin} disabled={loadingLogin} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-200 hover:bg-indigo-700 hover:scale-[1.02] transition-all flex items-center justify-center gap-3">{loadingLogin ? <Loader2 className="animate-spin"/> : <Shield size={20}/>} Sign in with Google</button>
                         </div>
                     </div>
                     <button onClick={() => setView('landing')} className="mt-8 flex items-center gap-2 text-slate-400 text-xs font-bold hover:text-indigo-600 transition-colors"><ChevronLeft size={14}/> Kembali ke Beranda</button>
@@ -1526,6 +1548,7 @@ export default function App() {
                 <span className="bg-indigo-50 text-indigo-600 px-3 py-1 rounded-lg text-[10px] font-bold uppercase mb-4 inline-block">{selectedNews.category}</span>
                 <h2 className="text-2xl font-black text-slate-800 mb-4 leading-tight">{selectedNews.title}</h2>
                 <div className="text-sm text-slate-600 leading-relaxed bg-slate-50 p-6 rounded-[2rem] mb-4 border border-slate-100 font-medium whitespace-pre-line">{selectedNews.content}</div>
+                <div className="text-xs text-slate-400 font-bold text-right">Diposting: {selectedNews.date}</div>
             </div>
         )}
       </Modal>
