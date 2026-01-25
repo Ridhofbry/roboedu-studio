@@ -14,7 +14,7 @@ import {
 // --- PRODUCTION IMPORTS ---
 import { initializeApp } from "firebase/app";
 import { 
-  getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, setPersistence, browserLocalPersistence
+  getAuth, GoogleAuthProvider, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged 
 } from "firebase/auth";
 import { 
   getFirestore, doc, setDoc, getDoc, updateDoc, deleteDoc, 
@@ -26,7 +26,6 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
    1. KONFIGURASI API & SAFETY CHECK
    ======================================================================== */
 
-// Cek keberadaan API Key untuk mencegah Blank Screen
 const API_KEY_EXISTS = import.meta.env.VITE_FIREBASE_API_KEY;
 
 const firebaseConfig = {
@@ -40,14 +39,12 @@ const firebaseConfig = {
 
 let app, auth, db, googleProvider;
 
-// Inisialisasi hanya jika API Key tersedia
 if (API_KEY_EXISTS) {
     try {
         app = initializeApp(firebaseConfig);
         auth = getAuth(app);
         db = getFirestore(app);
         googleProvider = new GoogleAuthProvider();
-        // Set persistensi agar tidak logout saat refresh (penting untuk Android)
         setPersistence(auth, browserLocalPersistence).catch(console.error);
     } catch (error) {
         console.error("Firebase Init Error:", error);
@@ -78,12 +75,135 @@ const TEAMS = [
   { id: 'team-5', name: 'Tim 5 (Special)', isSpecial: true },
 ];
 
+// LIST KOTA LENGKAP (SESUAI REQUEST)
 const INDONESIAN_CITIES = [
-    "Jakarta Pusat", "Jakarta Selatan", "Jakarta Barat", "Jakarta Timur", "Jakarta Utara",
-    "Surabaya", "Bandung", "Medan", "Semarang", "Makassar", "Palembang", "Tangerang",
-    "Depok", "Bekasi", "Bogor", "Malang", "Yogyakarta", "Surakarta", "Denpasar",
-    "Batam", "Pekanbaru", "Bandar Lampung", "Padang", "Samarinda", "Balikpapan",
-    "Banjarmasin", "Pontianak", "Manado", "Mataram", "Jayapura"
+  "Kabupaten Aceh Barat", "Kabupaten Aceh Barat Daya", "Kabupaten Aceh Besar", "Kabupaten Aceh Jaya", 
+  "Kabupaten Aceh Selatan", "Kabupaten Aceh Singkil", "Kabupaten Aceh Tamiang", "Kabupaten Aceh Tengah", 
+  "Kabupaten Aceh Tenggara", "Kabupaten Aceh Timur", "Kabupaten Aceh Utara", "Kabupaten Bener Meriah", 
+  "Kabupaten Bireuen", "Kabupaten Gayo Lues", "Kabupaten Nagan Raya", "Kabupaten Pidie", 
+  "Kabupaten Pidie Jaya", "Kabupaten Simeulue", "Kota Banda Aceh", "Kota Langsa", "Kota Lhokseumawe", 
+  "Kota Sabang", "Kota Subulussalam",
+  "Kabupaten Asahan", "Kabupaten Batubara", "Kabupaten Dairi", "Kabupaten Deli Serdang", 
+  "Kabupaten Humbang Hasundutan", "Kabupaten Karo", "Kabupaten Labuhanbatu", "Kabupaten Labuhanbatu Selatan", 
+  "Kabupaten Labuhanbatu Utara", "Kabupaten Langkat", "Kabupaten Mandailing Natal", "Kabupaten Nias", 
+  "Kabupaten Nias Barat", "Kabupaten Nias Selatan", "Kabupaten Nias Utara", "Kabupaten Padang Lawas", 
+  "Kabupaten Padang Lawas Utara", "Kabupaten Pakpak Bharat", "Kabupaten Samosir", "Kabupaten Serdang Bedagai", 
+  "Kabupaten Simalungun", "Kabupaten Tapanuli Selatan", "Kabupaten Tapanuli Tengah", "Kabupaten Tapanuli Utara", 
+  "Kabupaten Toba Samosir", "Kota Binjai", "Kota Gunungsitoli", "Kota Medan", "Kota Padangsidempuan", 
+  "Kota Pematangsiantar", "Kota Sibolga", "Kota Tanjungbalai", "Kota Tebing Tinggi",
+  "Kabupaten Agam", "Kabupaten Dharmasraya", "Kabupaten Kepulauan Mentawai", "Kabupaten Lima Puluh Kota", 
+  "Kabupaten Padang Pariaman", "Kabupaten Pasaman", "Kabupaten Pasaman Barat", "Kabupaten Pesisir Selatan", 
+  "Kabupaten Sijunjung", "Kabupaten Solok", "Kabupaten Solok Selatan", "Kabupaten Tanah Datar", 
+  "Kota Bukittinggi", "Kota Padang", "Kota Padangpanjang", "Kota Pariaman", "Kota Payakumbuh", 
+  "Kota Sawahlunto", "Kota Solok",
+  "Kabupaten Banyuasin", "Kabupaten Empat Lawang", "Kabupaten Lahat", "Kabupaten Muara Enim", 
+  "Kabupaten Musi Banyuasin", "Kabupaten Musi Rawas", "Kabupaten Musi Rawas Utara", "Kabupaten Ogan Ilir", 
+  "Kabupaten Ogan Komering Ilir", "Kabupaten Ogan Komering Ulu", "Kabupaten Ogan Komering Ulu Selatan", 
+  "Kabupaten Ogan Komering Ulu Timur", "Kabupaten Penukal Abab Lematang Ilir", "Kota Lubuklinggau", 
+  "Kota Pagar Alam", "Kota Palembang", "Kota Prabumulih",
+  "Kabupaten Bengkalis", "Kabupaten Indragiri Hilir", "Kabupaten Indragiri Hulu", "Kabupaten Kampar", 
+  "Kabupaten Kepulauan Meranti", "Kabupaten Kuantan Singingi", "Kabupaten Pelalawan", "Kabupaten Rokan Hilir", 
+  "Kabupaten Rokan Hulu", "Kabupaten Siak", "Kota Dumai", "Kota Pekanbaru",
+  "Kabupaten Bintan", "Kabupaten Karimun", "Kabupaten Kepulauan Anambas", "Kabupaten Lingga", 
+  "Kabupaten Natuna", "Kota Batam", "Kota Tanjung Pinang",
+  "Kabupaten Batanghari", "Kabupaten Bungo", "Kabupaten Kerinci", "Kabupaten Merangin", "Kabupaten Muaro Jambi", 
+  "Kabupaten Sarolangun", "Kabupaten Tanjung Jabung Barat", "Kabupaten Tanjung Jabung Timur", "Kabupaten Tebo", 
+  "Kota Jambi", "Kota Sungai Penuh",
+  "Kabupaten Bengkulu Selatan", "Kabupaten Bengkulu Tengah", "Kabupaten Bengkulu Utara", "Kabupaten Kaur", 
+  "Kabupaten Kepahiang", "Kabupaten Lebong", "Kabupaten Mukomuko", "Kabupaten Rejang Lebong", "Kabupaten Seluma", 
+  "Kota Bengkulu",
+  "Kabupaten Bangka", "Kabupaten Bangka Barat", "Kabupaten Bangka Selatan", "Kabupaten Bangka Tengah", 
+  "Kabupaten Belitung", "Kabupaten Belitung Timur", "Kota Pangkal Pinang",
+  "Kabupaten Lampung Tengah", "Kabupaten Lampung Utara", "Kabupaten Lampung Selatan", "Kabupaten Lampung Barat", 
+  "Kabupaten Lampung Timur", "Kabupaten Mesuji", "Kabupaten Pesawaran", "Kabupaten Pesisir Barat", 
+  "Kabupaten Pringsewu", "Kabupaten Tulang Bawang", "Kabupaten Tulang Bawang Barat", "Kabupaten Tanggamus", 
+  "Kabupaten Way Kanan", "Kota Bandar Lampung", "Kota Metro",
+  "Kabupaten Lebak", "Kabupaten Pandeglang", "Kabupaten Serang", "Kabupaten Tangerang", "Kota Cilegon", 
+  "Kota Serang", "Kota Tangerang", "Kota Tangerang Selatan",
+  "Kabupaten Bandung", "Kabupaten Bandung Barat", "Kabupaten Bekasi", "Kabupaten Bogor", "Kabupaten Ciamis", 
+  "Kabupaten Cianjur", "Kabupaten Cirebon", "Kabupaten Garut", "Kabupaten Indramayu", "Kabupaten Karawang", 
+  "Kabupaten Kuningan", "Kabupaten Majalengka", "Kabupaten Pangandaran", "Kabupaten Purwakarta", "Kabupaten Subang", 
+  "Kabupaten Sukabumi", "Kabupaten Sumedang", "Kabupaten Tasikmalaya", "Kota Bandung", "Kota Banjar", 
+  "Kota Bekasi", "Kota Bogor", "Kota Cimahi", "Kota Cirebon", "Kota Depok", "Kota Sukabumi", "Kota Tasikmalaya",
+  "Kabupaten Banjarnegara", "Kabupaten Banyumas", "Kabupaten Batang", "Kabupaten Blora", "Kabupaten Boyolali", 
+  "Kabupaten Brebes", "Kabupaten Cilacap", "Kabupaten Demak", "Kabupaten Grobogan", "Kabupaten Jepara", 
+  "Kabupaten Karanganyar", "Kabupaten Kebumen", "Kabupaten Kendal", "Kabupaten Klaten", "Kabupaten Kudus", 
+  "Kabupaten Magelang", "Kabupaten Pati", "Kabupaten Pekalongan", "Kabupaten Pemalang", "Kabupaten Purbalingga", 
+  "Kabupaten Purworejo", "Kabupaten Rembang", "Kabupaten Semarang", "Kabupaten Sragen", "Kabupaten Sukoharjo", 
+  "Kabupaten Tegal", "Kabupaten Temanggung", "Kabupaten Wonogiri", "Kabupaten Wonosobo", "Kota Magelang", 
+  "Kota Pekalongan", "Kota Salatiga", "Kota Semarang", "Kota Surakarta", "Kota Tegal",
+  "Kabupaten Bangkalan", "Kabupaten Banyuwangi", "Kabupaten Blitar", "Kabupaten Bojonegoro", "Kabupaten Bondowoso", 
+  "Kabupaten Gresik", "Kabupaten Jember", "Kabupaten Jombang", "Kabupaten Kediri", "Kabupaten Lamongan", 
+  "Kabupaten Lumajang", "Kabupaten Madiun", "Kabupaten Magetan", "Kabupaten Malang", "Kabupaten Mojokerto", 
+  "Kabupaten Nganjuk", "Kabupaten Ngawi", "Kabupaten Pacitan", "Kabupaten Pamekasan", "Kabupaten Pasuruan", 
+  "Kabupaten Ponorogo", "Kabupaten Probolinggo", "Kabupaten Sampang", "Kabupaten Sidoarjo", "Kabupaten Situbondo", 
+  "Kabupaten Sumenep", "Kabupaten Trenggalek", "Kabupaten Tuban", "Kabupaten Tulungagung", "Kota Batu", 
+  "Kota Blitar", "Kota Kediri", "Kota Madiun", "Kota Malang", "Kota Mojokerto", "Kota Pasuruan", "Kota Probolinggo", 
+  "Kota Surabaya",
+  "Kota Administrasi Jakarta Barat", "Kota Administrasi Jakarta Pusat", "Kota Administrasi Jakarta Selatan", 
+  "Kota Administrasi Jakarta Timur", "Kota Administrasi Jakarta Utara", "Kabupaten Administrasi Kepulauan Seribu",
+  "Kabupaten Bantul", "Kabupaten Gunungkidul", "Kabupaten Kulon Progo", "Kabupaten Sleman", "Kota Yogyakarta",
+  "Kabupaten Badung", "Kabupaten Bangli", "Kabupaten Buleleng", "Kabupaten Gianyar", "Kabupaten Jembrana", 
+  "Kabupaten Karangasem", "Kabupaten Klungkung", "Kabupaten Tabanan", "Kota Denpasar",
+  "Kabupaten Bima", "Kabupaten Dompu", "Kabupaten Lombok Barat", "Kabupaten Lombok Tengah", "Kabupaten Lombok Timur", 
+  "Kabupaten Lombok Utara", "Kabupaten Sumbawa", "Kabupaten Sumbawa Barat", "Kota Bima", "Kota Mataram",
+  "Kabupaten Alor", "Kabupaten Belu", "Kabupaten Ende", "Kabupaten Flores Timur", "Kabupaten Kupang", 
+  "Kabupaten Lembata", "Kabupaten Malaka", "Kabupaten Manggarai", "Kabupaten Manggarai Barat", 
+  "Kabupaten Manggarai Timur", "Kabupaten Ngada", "Kabupaten Nagekeo", "Kabupaten Rote Ndao", 
+  "Kabupaten Sabu Raijua", "Kabupaten Sikka", "Kabupaten Sumba Barat", "Kabupaten Sumba Barat Daya", 
+  "Kabupaten Sumba Tengah", "Kabupaten Sumba Timur", "Kabupaten Timor Tengah Selatan", 
+  "Kabupaten Timor Tengah Utara", "Kota Kupang",
+  "Kabupaten Bengkayang", "Kabupaten Kapuas Hulu", "Kabupaten Kayong Utara", "Kabupaten Ketapang", 
+  "Kabupaten Kubu Raya", "Kabupaten Landak", "Kabupaten Melawi", "Kabupaten Mempawah", "Kabupaten Sambas", 
+  "Kabupaten Sanggau", "Kabupaten Sekadau", "Kabupaten Sintang", "Kota Pontianak", "Kota Singkawang",
+  "Kabupaten Balangan", "Kabupaten Banjar", "Kabupaten Barito Kuala", "Kabupaten Hulu Sungai Selatan", 
+  "Kabupaten Hulu Sungai Tengah", "Kabupaten Hulu Sungai Utara", "Kabupaten Kotabaru", "Kabupaten Tabalong", 
+  "Kabupaten Tanah Bumbu", "Kabupaten Tanah Laut", "Kabupaten Tapin", "Kota Banjarbaru", "Kota Banjarmasin",
+  "Kabupaten Barito Selatan", "Kabupaten Barito Timur", "Kabupaten Barito Utara", "Kabupaten Gunung Mas", 
+  "Kabupaten Kapuas", "Kabupaten Katingan", "Kabupaten Kotawaringin Barat", "Kabupaten Kotawaringin Timur", 
+  "Kabupaten Lamandau", "Kabupaten Murung Raya", "Kabupaten Pulang Pisau", "Kabupaten Sukamara", 
+  "Kabupaten Seruyan", "Kota Palangka Raya",
+  "Kabupaten Berau", "Kabupaten Kutai Barat", "Kabupaten Kutai Kartanegara", "Kabupaten Kutai Timur", 
+  "Kabupaten Mahakam Ulu", "Kabupaten Paser", "Kabupaten Penajam Paser Utara", "Kota Balikpapan", 
+  "Kota Bontang", "Kota Samarinda",
+  "Kabupaten Bulungan", "Kabupaten Malinau", "Kabupaten Nunukan", "Kabupaten Tana Tidung", "Kota Tarakan",
+  "Kabupaten Boalemo", "Kabupaten Bone Bolango", "Kabupaten Gorontalo", "Kabupaten Gorontalo Utara", 
+  "Kabupaten Pohuwato", "Kota Gorontalo",
+  "Kabupaten Bantaeng", "Kabupaten Barru", "Kabupaten Bone", "Kabupaten Bulukumba", "Kabupaten Enrekang", 
+  "Kabupaten Gowa", "Kabupaten Jeneponto", "Kabupaten Kepulauan Selayar", "Kabupaten Luwu", 
+  "Kabupaten Luwu Timur", "Kabupaten Luwu Utara", "Kabupaten Maros", "Kabupaten Pangkajene dan Kepulauan", 
+  "Kabupaten Pinrang", "Kabupaten Sidenreng Rappang", "Kabupaten Sinjai", "Kabupaten Soppeng", 
+  "Kabupaten Takalar", "Kabupaten Tana Toraja", "Kabupaten Toraja Utara", "Kabupaten Wajo", "Kota Makassar", 
+  "Kota Palopo", "Kota Parepare",
+  "Kabupaten Bombana", "Kabupaten Buton", "Kabupaten Buton Selatan", "Kabupaten Buton Tengah", 
+  "Kabupaten Buton Utara", "Kabupaten Kolaka", "Kabupaten Kolaka Timur", "Kabupaten Kolaka Utara", 
+  "Kabupaten Konawe", "Kabupaten Konawe Kepulauan", "Kabupaten Konawe Selatan", "Kabupaten Konawe Utara", 
+  "Kabupaten Muna", "Kabupaten Muna Barat", "Kabupaten Wakatobi", "Kota Bau-Bau", "Kota Kendari",
+  "Kabupaten Banggai", "Kabupaten Banggai Kepulauan", "Kabupaten Banggai Laut", "Kabupaten Buol", 
+  "Kabupaten Donggala", "Kabupaten Morowali", "Kabupaten Morowali Utara", "Kabupaten Parigi Moutong", 
+  "Kabupaten Poso", "Kabupaten Sigi", "Kabupaten Tojo Una-Una", "Kabupaten Toli-Toli", "Kota Palu",
+  "Kabupaten Bolaang Mongondow", "Kabupaten Bolaang Mongondow Selatan", "Kabupaten Bolaang Mongondow Timur", 
+  "Kabupaten Bolaang Mongondow Utara", "Kabupaten Kepulauan Sangihe", "Kabupaten Kepulauan Siau Tagulandang Biaro", 
+  "Kabupaten Kepulauan Talaud", "Kabupaten Minahasa", "Kabupaten Minahasa Selatan", "Kabupaten Minahasa Tenggara", 
+  "Kabupaten Minahasa Utara", "Kota Bitung", "Kota Kotamobagu", "Kota Manado", "Kota Tomohon",
+  "Kabupaten Majene", "Kabupaten Mamasa", "Kabupaten Mamuju", "Kabupaten Mamuju Tengah", 
+  "Kabupaten Mamuju Utara", "Kabupaten Polewali Mandar", "Kota Mamuju",
+  "Kabupaten Buru", "Kabupaten Buru Selatan", "Kabupaten Kepulauan Aru", "Kabupaten Maluku Barat Daya", 
+  "Kabupaten Maluku Tengah", "Kabupaten Maluku Tenggara", "Kabupaten Maluku Tenggara Barat", 
+  "Kabupaten Seram Bagian Barat", "Kabupaten Seram Bagian Timur", "Kota Ambon", "Kota Tual",
+  "Kabupaten Halmahera Barat", "Kabupaten Halmahera Tengah", "Kabupaten Halmahera Utara", 
+  "Kabupaten Halmahera Selatan", "Kabupaten Kepulauan Sula", "Kabupaten Halmahera Timur", 
+  "Kabupaten Pulau Morotai", "Kabupaten Pulau Taliabu", "Kota Ternate", "Kota Tidore Kepulauan",
+  "Kabupaten Asmat", "Kabupaten Biak Numfor", "Kabupaten Boven Digoel", "Kabupaten Deiyai", 
+  "Kabupaten Dogiyai", "Kabupaten Intan Jaya", "Kabupaten Jayapura", "Kabupaten Jayawijaya", 
+  "Kabupaten Keerom", "Kabupaten Kepulauan Yapen", "Kabupaten Lanny Jaya", "Kabupaten Mamberamo Raya", 
+  "Kabupaten Mamberamo Tengah", "Kabupaten Mappi", "Kabupaten Merauke", "Kabupaten Mimika", "Kabupaten Nabire", 
+  "Kabupaten Nduga", "Kabupaten Paniai", "Kabupaten Pegunungan Bintang", "Kabupaten Puncak", 
+  "Kabupaten Puncak Jaya", "Kabupaten Sarmi", "Kabupaten Supiori", "Kabupaten Tolikara", "Kabupaten Waropen", 
+  "Kabupaten Yahukimo", "Kabupaten Yalimo", "Kota Jayapura",
+  "Kabupaten Fakfak", "Kabupaten Kaimana", "Kabupaten Manokwari", "Kabupaten Manokwari Selatan", 
+  "Kabupaten Maybrat", "Kabupaten Pegunungan Arfak", "Kabupaten Raja Ampat", "Kabupaten Sorong", 
+  "Kabupaten Sorong Selatan", "Kabupaten Tambrauw", "Kabupaten Teluk Bintuni", "Kabupaten Teluk Wondama"
 ].sort();
 
 const WORKFLOW_STEPS = [
@@ -116,36 +236,23 @@ const WORKFLOW_STEPS = [
 
 const ALL_TASK_IDS = WORKFLOW_STEPS.flatMap(step => step.tasks.map(t => t.id));
 
+const INITIAL_PROJECTS = [];
+const NEWS_DATA = [];
+const MOCK_ASSETS = [];
+
 /* ========================================================================
    3. API FUNCTIONS
    ======================================================================== */
 
 const sendOneSignalNotification = async (targetRole, message, teamName) => {
   if (!ONESIGNAL_APP_ID || !ONESIGNAL_API_KEY) return;
-  
   const heading = targetRole === 'supervisor' ? `Laporan: ${teamName}` : `Update: ${teamName}`;
-  const content = message;
-
   const options = {
     method: 'POST',
-    headers: {
-      accept: 'application/json',
-      'content-type': 'application/json',
-      Authorization: `Basic ${ONESIGNAL_API_KEY}`
-    },
-    body: JSON.stringify({
-      app_id: ONESIGNAL_APP_ID,
-      included_segments: ["All"],
-      contents: { en: content },
-      headings: { en: heading }
-    })
+    headers: { accept: 'application/json', 'content-type': 'application/json', Authorization: `Basic ${ONESIGNAL_API_KEY}` },
+    body: JSON.stringify({ app_id: ONESIGNAL_APP_ID, included_segments: ["All"], contents: { en: message }, headings: { en: heading } })
   };
-
-  try {
-    await fetch('https://onesignal.com/api/v1/notifications', options);
-  } catch (err) {
-    console.error("Gagal kirim notif", err);
-  }
+  try { await fetch('https://onesignal.com/api/v1/notifications', options); } catch (err) { console.error("Gagal kirim notif", err); }
 };
 
 const generateAIScript = async (prompt) => {
@@ -155,10 +262,7 @@ const generateAIScript = async (prompt) => {
     const result = await model.generateContent(prompt);
     const response = await result.response;
     return response.text();
-  } catch (error) {
-    console.error("Gemini Error:", error);
-    return "Gagal generate script. Coba lagi.";
-  }
+  } catch (error) { return "Gagal generate script. Coba lagi."; }
 };
 
 /* ========================================================================
@@ -228,22 +332,10 @@ const WeeklyBotReport = ({ projects }) => {
         const now = new Date(); const currentDay = now.getDay(); const diffToMonday = currentDay === 0 ? 6 : currentDay - 1; 
         const startOfWeek = new Date(now); startOfWeek.setHours(0, 0, 0, 0); startOfWeek.setDate(now.getDate() - diffToMonday);
         let completed = 0; let late = 0; let onTime = 0;
-        projects.forEach(p => {
-            if (p.status === 'Completed' && p.completedAt) {
-                const completedDate = new Date(p.completedAt);
-                if (completedDate >= startOfWeek) {
-                    completed++;
-                    if (p.deadline) { const deadline = new Date(p.deadline); if (completedDate > deadline) late++; else onTime++; } else { onTime++; }
-                }
-            }
-        });
+        projects.forEach(p => { if (p.status === 'Completed' && p.completedAt) { const completedDate = new Date(p.completedAt); if (completedDate >= startOfWeek) { completed++; if (p.deadline) { const deadline = new Date(p.deadline); if (completedDate > deadline) late++; else onTime++; } else { onTime++; } } } });
         return { completed, late, onTime };
     }, [projects]);
-    const getMessage = () => {
-        if (report.completed === 0) return "Minggu ini belum ada project selesai. Ayo semangat tim!";
-        if (report.late > 0) return `Minggu ini produktif, namun ada ${report.late} project yang melebihi deadline. Perhatikan ketepatan waktu!`;
-        return `Performa Luar Biasa! ${report.completed} Project selesai tepat waktu minggu ini. Pertahankan!`;
-    };
+    const getMessage = () => { if (report.completed === 0) return "Minggu ini belum ada project selesai. Ayo semangat tim!"; if (report.late > 0) return `Minggu ini produktif, namun ada ${report.late} project yang melebihi deadline.`; return `Performa Luar Biasa! ${report.completed} Project selesai tepat waktu minggu ini.`; };
     return (
         <div className="bg-indigo-900 text-white p-6 rounded-[2.5rem] shadow-xl border border-indigo-700 relative overflow-hidden mb-8">
              <div className="absolute top-0 right-0 p-16 bg-white/10 rounded-full blur-3xl -mr-10 -mt-10"></div>
@@ -260,23 +352,6 @@ const WeeklyBotReport = ({ projects }) => {
    ======================================================================== */
 
 export default function App() {
-  // --- SAFETY CHECK RENDER ---
-  // Jika API Key tidak ada (belum diset di Vercel), tampilkan layar error daripada Blank Screen
-  if (!API_KEY_EXISTS) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-100 p-8 text-center font-sans">
-        <div className="max-w-md bg-white p-8 rounded-3xl shadow-xl">
-            <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />
-            <h1 className="text-2xl font-black text-slate-800 mb-2">Konfigurasi Hilang!</h1>
-            <p className="text-slate-500 mb-4 text-sm">Website ini belum terhubung ke Firebase. Mohon masukkan <b>Environment Variables</b> (API Key) di Dashboard Vercel.</p>
-            <div className="bg-slate-100 p-4 rounded-xl text-xs text-left font-mono text-slate-600 break-all border border-slate-200">
-                VITE_FIREBASE_API_KEY=...<br/>VITE_FIREBASE_AUTH_DOMAIN=...
-            </div>
-        </div>
-      </div>
-    );
-  }
-
   // State
   const [user, setUser] = useState(null);
   const [userData, setUserData] = useState(null);
@@ -343,22 +418,20 @@ export default function App() {
         
         if (docSnap.exists()) {
           const d = docSnap.data();
-          // FORCE UPDATE SUPER ADMIN ROLE
           if (SUPER_ADMIN_EMAILS.includes(u.email) && d.role !== 'super_admin') {
              await updateDoc(docRef, { role: 'super_admin' });
              setUserData({ ...d, role: 'super_admin' });
           } else {
              setUserData(d);
           }
-          // Redirect
           if (!d.isProfileComplete) {
              setView('profile-setup');
-             setProfileForm({ username: u.displayName || '', school: '', city: '' });
+             setProfileForm({ username: d.displayName || '', school: '', city: '' });
           } else {
              setView('dashboard');
           }
         } else {
-          // USER DOES NOT EXIST
+          // USER NOT IN DB
           if(SUPER_ADMIN_EMAILS.includes(u.email)) {
              // AUTO CREATE SUPER ADMIN
              const newAdmin = {
@@ -366,14 +439,20 @@ export default function App() {
                 role: 'super_admin', isProfileComplete: false, nameChangeCount: 0, uid: u.uid
              };
              await setDoc(docRef, newAdmin);
+             
+             // CLEANUP PENDING
+             const q = query(collection(db, 'pending_users'), where('email', '==', u.email));
+             const snaps = await getDocs(q);
+             snaps.forEach(async (doc) => await deleteDoc(doc.ref));
+
              setUserData(newAdmin);
              setView('profile-setup');
-             showToast("Halo Super Admin! Lengkapi profil.");
+             showToast("Welcome Super Admin! Lengkapi profil.");
           } else {
-             // PENDING USER (HANDLED IN LOGIN, BUT DOUBLE CHECK HERE)
+             // PENDING
              setUserData(null);
              setView('landing');
-             await signOut(auth);
+             // Logout handled in login
           }
         }
       } else {
@@ -386,7 +465,6 @@ export default function App() {
 
   useEffect(() => {
     if (!db) return;
-    // Safety check: only run listener if collection exists (it will be created on first write)
     const unsubProj = onSnapshot(collection(db, 'projects'), (s) => setProjects(s.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubNews = onSnapshot(collection(db, 'news'), (s) => setNews(s.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubAssets = onSnapshot(collection(db, 'assets'), (s) => setAssets(s.docs.map(d => ({ id: d.id, ...d.data() }))));
@@ -446,13 +524,13 @@ export default function App() {
         if (userDoc.exists()) {
              // User exists, listener handles navigation
         } else if (SUPER_ADMIN_EMAILS.includes(email)) {
-             // --- FORCE PROMOTE SUPER ADMIN ---
+             // FORCE CREATE SUPER ADMIN
              const newAdmin = {
                 email: email, displayName: result.user.displayName, photoURL: result.user.photoURL,
                 role: 'super_admin', isProfileComplete: false, nameChangeCount: 0, uid
              };
              await setDoc(doc(db, 'users', uid), newAdmin);
-             // Cleanup if accidentally in pending
+             
              const q = query(collection(db, 'pending_users'), where('email', '==', email));
              const snaps = await getDocs(q);
              snaps.forEach(async (doc) => await deleteDoc(doc.ref));
@@ -575,7 +653,6 @@ export default function App() {
       const proj = projects.find(p => p.id === projId); if (!proj) return;
       if (userData.role === 'supervisor' || userData.role === 'super_admin') return showToast("Admin view only", "error");
       if (isTaskLocked(taskId, proj.completedTasks)) return showToast("Tugas terkunci!", "error");
-      
       const newTasks = proj.completedTasks.includes(taskId) ? proj.completedTasks.filter(t=>t!==taskId) : [...proj.completedTasks, taskId];
       const newProgress = calculateProgress(newTasks);
       const status = newProgress === 100 ? 'Completed' : proj.status;
@@ -803,6 +880,7 @@ export default function App() {
         </div>
       )}
 
+      {/* --- CONTENT AREA --- */}
       <div className="flex-1 p-4 md:p-8 pb-32 relative z-10 w-full min-h-screen">
         <div className="max-w-7xl mx-auto w-full">
 
@@ -927,7 +1005,7 @@ export default function App() {
                         </div>
                         <div className="space-y-4">
                             <div className="text-center text-slate-400 text-xs font-bold mb-4">LOGIN GOOGLE</div>
-                            <button onClick={handleGoogleLogin} disabled={loadingLogin} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg hover:bg-indigo-700 flex items-center justify-center gap-3">{loadingLogin ? <Loader2 className="animate-spin"/> : <Shield size={20}/>} Sign in with Google</button>
+                            <button onClick={handleGoogleLogin} disabled={loadingLogin} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-200 hover:bg-indigo-700 hover:scale-[1.02] transition-all flex items-center justify-center gap-3">{loadingLogin ? <Loader2 className="animate-spin"/> : <Shield size={20}/>} Sign in with Google</button>
                         </div>
                     </div>
                     <button onClick={() => setView('landing')} className="mt-8 flex items-center gap-2 text-slate-400 text-xs font-bold hover:text-indigo-600 transition-colors"><ChevronLeft size={14}/> Kembali ke Beranda</button>
@@ -1442,19 +1520,34 @@ export default function App() {
               <div className="space-y-6 animate-[fadeIn_0.3s]">
                   <div className="flex items-center gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
                       <img src={selectedPendingUser.photoURL} className="w-12 h-12 rounded-full bg-white shadow-sm"/>
-                      <div><p className="font-bold text-slate-800">{selectedPendingUser.displayName}</p><p className="text-xs text-slate-500">{selectedPendingUser.email}</p></div>
-                  </div>
-                  <div className="space-y-2">
-                      <label className="text-xs font-bold text-slate-400 uppercase">Pilih Role</label>
-                      <div className="grid grid-cols-1 gap-2">
-                          <button type="button" onClick={() => setApprovalForm({...approvalForm, role: 'creator'})} className={`p-3 rounded-xl border text-left text-sm font-bold ${approvalForm.role === 'creator' ? 'bg-indigo-50 border-indigo-500 text-indigo-700' : 'text-slate-600'}`}>Creator</button>
-                          <button type="button" onClick={() => setApprovalForm({...approvalForm, role: 'tim_khusus'})} className={`p-3 rounded-xl border text-left text-sm font-bold ${approvalForm.role === 'tim_khusus' ? 'bg-amber-50 border-amber-500 text-amber-700' : 'text-slate-600'}`}>Tim Khusus</button>
-                          <button type="button" onClick={() => setApprovalForm({...approvalForm, role: 'supervisor'})} className={`p-3 rounded-xl border text-left text-sm font-bold ${approvalForm.role === 'supervisor' ? 'bg-purple-50 border-purple-500 text-purple-700' : 'text-slate-600'}`}>Supervisor</button>
+                      <div>
+                          <div className="font-bold text-slate-800">{selectedPendingUser.displayName}</div>
+                          <div className="text-xs text-slate-500">{selectedPendingUser.email}</div>
                       </div>
                   </div>
-                  <button type="button" onClick={handleConfirmApproval} className="w-full py-4 bg-emerald-500 text-white rounded-2xl font-bold shadow-lg">Setujui Akses</button>
+                  <div className="space-y-3">
+                      <label className="block text-xs font-bold text-slate-400 uppercase">Pilih Role / Jabatan</label>
+                      <div className="grid grid-cols-1 gap-2">
+                          <button type="button" onClick={() => setApprovalForm({...approvalForm, role: 'creator'})} className={`p-3 rounded-xl border text-left text-sm font-bold ${approvalForm.role === 'creator' ? 'bg-indigo-50 border-indigo-500 text-indigo-700' : 'border-slate-200 text-slate-600'}`}><UserCircle size={18}/> Tim Creator (Regular)</button>
+                          <button type="button" onClick={() => setApprovalForm({...approvalForm, role: 'tim_khusus'})} className={`p-3 rounded-xl border text-left text-sm font-bold ${approvalForm.role === 'tim_khusus' ? 'bg-amber-50 border-amber-500 text-amber-700' : 'border-slate-200 text-slate-600'}`}><Lock size={18}/> Tim Khusus / Tim 5 (Big Project)</button>
+                          <button type="button" onClick={() => setApprovalForm({...approvalForm, role: 'supervisor'})} className={`p-3 rounded-xl border text-left text-sm font-bold ${approvalForm.role === 'supervisor' ? 'bg-purple-50 border-purple-500 text-purple-700' : 'border-slate-200 text-slate-600'}`}><ShieldCheck size={18}/> Supervisor (Monitoring)</button>
+                      </div>
+                  </div>
+                  {approvalForm.role === 'creator' && (
+                      <div className="space-y-3 animate-[slideUp_0.2s]">
+                          <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Assign ke Tim Mana?</label>
+                          <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto custom-scrollbar">
+                              {TEAMS.filter(t => !t.isSpecial).map(t => (
+                                  <button key={t.id} onClick={() => setApprovalForm({...approvalForm, teamId: t.id})} className={`p-2 rounded-lg text-xs font-bold border ${approvalForm.teamId === t.id ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-500 border-slate-200'}`}>{t.name}</button>
+                              ))}
+                          </div>
+                      </div>
+                  )}
+                  <button type="button" onClick={handleConfirmApproval} className="w-full py-4 bg-emerald-500 text-white rounded-2xl font-bold shadow-lg hover:bg-emerald-600 transition-all">Setujui & Beri Akses</button>
               </div>
-          ) : (<div className="text-center py-10"><Loader2 className="animate-spin mx-auto text-slate-300"/></div>)}
+          ) : (
+            <div className="text-center py-10"><Loader2 className="animate-spin mx-auto text-slate-300"/></div>
+          )}
       </Modal>
 
       {/* Other modals (Edit Weekly, News, Approval, etc.) remain standard as previous */}
@@ -1463,7 +1556,7 @@ export default function App() {
         <div className="space-y-4">
            <div><label className="block text-xs font-bold text-slate-500 mb-1">Judul Highlight</label><input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:border-indigo-500 transition-colors" value={weeklyForm.title} onChange={e => setWeeklyForm({...weeklyForm, title: e.target.value})} /></div>
            <div><label className="block text-xs font-bold text-slate-500 mb-1">URL Gambar (Unsplash)</label><input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:border-indigo-500 transition-colors" value={weeklyForm.image} onChange={e => setWeeklyForm({...weeklyForm, image: e.target.value})} /></div>
-           <button onClick={() => {setWeeklyContent(weeklyForm); setIsEditWeeklyOpen(false); showToast("Highlight berhasil diperbarui!");}} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold transition-all shadow-lg flex items-center justify-center gap-2"><Save size={18}/> Simpan Perubahan</button>
+           <button onClick={handleSaveWeekly} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold transition-all shadow-lg flex items-center justify-center gap-2"><Save size={18}/> Simpan Perubahan</button>
         </div>
       </Modal>
 
@@ -1491,7 +1584,6 @@ export default function App() {
                 <span className="bg-indigo-50 text-indigo-600 px-3 py-1 rounded-lg text-[10px] font-bold uppercase mb-4 inline-block">{selectedNews.category}</span>
                 <h2 className="text-2xl font-black text-slate-800 mb-4 leading-tight">{selectedNews.title}</h2>
                 <div className="text-sm text-slate-600 leading-relaxed bg-slate-50 p-6 rounded-[2rem] mb-4 border border-slate-100 font-medium whitespace-pre-line">{selectedNews.content}</div>
-                <div className="text-xs text-slate-400 font-bold text-right">Diposting: {selectedNews.date}</div>
             </div>
         )}
       </Modal>
