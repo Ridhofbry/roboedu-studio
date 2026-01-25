@@ -455,16 +455,26 @@ export default function App() {
         }
     }, []);
 
-    // Firestore Listeners (Active User Only)
+    // --- DATA LISTENERS (PUBLIC) ---
     useEffect(() => {
-        if (!db || !user) return; // STOP HERE if not logged in
+        if (!db) return;
+        const hPublic = (ctx) => (err) => console.log(`Public stream ${ctx} closed`);
+
+        // News & Config (Always Run)
+        const unsubNews = onSnapshot(collection(db, 'news'), (s) => setNews(s.docs.map(d => ({ id: d.id, ...d.data() }))), hPublic("News"));
+        const unsubConfig = onSnapshot(doc(db, 'site_config', 'main'), (d) => { if (d.exists()) { const data = d.data(); if (data.logo) setSiteLogo(data.logo); if (data.weekly) setWeeklyContent(data.weekly); } }, hPublic("Config"));
+        return () => { unsubNews(); unsubConfig(); };
+    }, []);
+
+    // --- DATA LISTENERS (PRIVATE) ---
+    useEffect(() => {
+        if (!db || !user) { setProjects([]); setAssets([]); return; }
 
         // Error Handler
         const handleDbError = (context) => (error) => {
             console.error(`Error fetching ${context}:`, error);
             if (error.code === 'permission-denied') {
-                // Only show error if user is still logged in (ignore logout errors)
-                if (user) showToast(`Akses Ditolak: Gagal memuat ${context}. Cek Rules!`, "error");
+                if (user) showToast(`Akses Ditolak: ${context}`, "error");
             }
         };
 
@@ -473,22 +483,17 @@ export default function App() {
             handleDbError("Projects")
         );
 
-        const unsubNews = onSnapshot(collection(db, 'news'),
-            (s) => setNews(s.docs.map(d => ({ id: d.id, ...d.data() }))),
-            handleDbError("News")
-        );
+
 
         const unsubAssets = onSnapshot(collection(db, 'assets'),
             (s) => setAssets(s.docs.map(d => ({ id: d.id, ...d.data() }))),
             handleDbError("Assets")
         );
 
-        const unsubConfig = onSnapshot(doc(db, 'site_config', 'main'), (d) => {
-            if (d.exists()) { const data = d.data(); if (data.logo) setSiteLogo(data.logo); if (data.weekly) setWeeklyContent(data.weekly); }
-        }, handleDbError("Config"));
 
-        return () => { unsubProj(); unsubNews(); unsubAssets(); unsubConfig(); };
-    }, []);
+
+        return () => { unsubProj(); unsubAssets(); };
+    }, [user]);
 
     // --- AUTO-SYNC ACTIVE PROJECT ---
     // Fixes issue where checklist updates don't show immediately
@@ -585,7 +590,17 @@ export default function App() {
         }
     };
 
-    const handleLogout = async () => { await signOut(auth); setView('landing'); setShowMobileMenu(false); };
+    const handleLogout = async () => {
+        requestConfirm("Yakin Keluar?", "Anda akan kembali ke halaman utama.", async () => {
+            setLoadingLogin(true); // Show loading
+            setTimeout(async () => {
+                await signOut(auth);
+                setView('landing');
+                setShowMobileMenu(false);
+                setLoadingLogin(false);
+            }, 800); // Artificial delay for smooth UX
+        }, 'danger');
+    };
 
     // PROFILE
     const handleProfileSubmit = async () => {
