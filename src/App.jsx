@@ -1374,7 +1374,13 @@ export default function App() {
                         <div className="pt-20 animate-[fadeIn_0.3s]">
                             <div className="flex justify-between items-end mb-8">
                                 <div>
-                                    <button onClick={() => setView('dashboard')} className="mb-2 text-xs font-bold text-slate-400 hover:text-indigo-600 flex items-center gap-1"><ChevronLeft size={14} /> Kembali</button>
+                                    <button onClick={() => {
+                                        if ((userData?.role === 'supervisor' || userData?.role === 'super_admin') && !activeTeamId) {
+                                            setView('team-list');
+                                        } else {
+                                            setView('dashboard');
+                                        }
+                                    }} className="mb-2 text-xs font-bold text-slate-400 hover:text-indigo-600 flex items-center gap-1"><ChevronLeft size={14} /> Kembali</button>
                                     <h2 className="text-3xl font-black text-slate-800">Arsip Project (Fixed)</h2>
                                     <p className="text-sm text-slate-500 mt-1">Project yang sudah selesai</p>
                                 </div>
