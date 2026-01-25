@@ -336,7 +336,7 @@ export default function App() {
         projects.forEach(p => {
             if (p.status === 'Completed' && p.completedAt) {
                 const d = new Date(p.completedAt);
-                if (d >= start && (teamId === 'all' || p.teamId === teamId)) {
+                if (d >= start && (teamId === 'all' || String(p.teamId) === String(teamId))) {
                     const idx = d.getDay() === 0 ? 6 : d.getDay() - 1;
                     data[idx]++;
                 }
@@ -1065,7 +1065,7 @@ export default function App() {
                             </div>
                             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
                                 {TEAMS.map(team => {
-                                    const count = projects.filter(p => p.teamId === team.id && p.status !== 'Completed').length;
+                                    const count = projects.filter(p => String(p.teamId) === String(team.id) && p.status !== 'Completed').length;
                                     return (
                                         <div key={team.id} onClick={() => { setActiveTeamId(team.id); setView('dashboard'); }} className={`bg-white p-6 rounded-[2rem] border cursor-pointer hover:scale-105 transition-all shadow-sm group ${team.isSpecial ? 'border-amber-200 bg-amber-50/50' : 'border-slate-100 hover:border-indigo-200'}`}>
                                             <div className="flex items-center gap-4 mb-4">
@@ -1122,16 +1122,13 @@ export default function App() {
                             <div className="grid md:grid-cols-2 gap-4 mt-6">
                                 {projects
                                     .filter(p => {
-                                        // Filter 1: Exclude completed
                                         if (p.status === 'Completed') return false;
 
-                                        // Filter 2: Team-based access
                                         if (userData?.role === 'supervisor' || userData?.role === 'super_admin') {
-                                            // Admin/Supervisor: If activeTeamId selected, show only that team
-                                            return activeTeamId ? (p.teamId === activeTeamId) : true;
+                                            return activeTeamId ? (String(p.teamId) === String(activeTeamId)) : true;
                                         } else {
-                                            // Creator: Show only own team
-                                            return p.teamId === userData?.teamId;
+                                            // Robust string check
+                                            return String(p.teamId) === String(userData?.teamId);
                                         }
                                     })
                                     .map(p => (
@@ -1142,6 +1139,18 @@ export default function App() {
                                         </div>
                                     ))}
                             </div>
+
+                            {/* Empty State with Debug Info */}
+                            {projects.filter(p => p.status !== 'Completed' && (userData?.role === 'supervisor' || userData?.role === 'super_admin' ? (activeTeamId ? String(p.teamId) === String(activeTeamId) : true) : String(p.teamId) === String(userData?.teamId))).length === 0 && (
+                                <div className="text-center py-12 text-slate-400">
+                                    <FolderOpen size={48} className="mx-auto mb-4 opacity-50" />
+                                    <p className="font-bold">Belum ada project aktif.</p>
+                                    <p className="text-xs mt-2">Pastikan project sudah Assign ke Tim yang benar.</p>
+                                    <p className="text-[10px] mt-4 font-mono opacity-50 bg-slate-100 inline-block px-2 py-1 rounded">
+                                        Debug: Role={userData?.role} | Me={userData?.teamId || 'NULL'} | Team={activeTeamId || 'ALL'}
+                                    </p>
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -1421,9 +1430,9 @@ export default function App() {
 
                                         // Team-based filter
                                         if (userData?.role === 'supervisor' || userData?.role === 'super_admin') {
-                                            return activeTeamId ? (p.teamId === activeTeamId) : true;
+                                            return activeTeamId ? (String(p.teamId) === String(activeTeamId)) : true;
                                         } else {
-                                            return p.teamId === userData?.teamId;
+                                            return String(p.teamId) === String(userData?.teamId);
                                         }
                                     })
                                     .map(p => (
@@ -1454,10 +1463,11 @@ export default function App() {
                                     ))}
                                 {projects.filter(p => {
                                     if (p.status !== 'Completed') return false;
+                                    if (p.status !== 'Completed') return false;
                                     if (userData?.role === 'supervisor' || userData?.role === 'super_admin') {
-                                        return activeTeamId ? (p.teamId === activeTeamId) : true;
+                                        return activeTeamId ? (String(p.teamId) === String(activeTeamId)) : true;
                                     } else {
-                                        return p.teamId === userData?.teamId;
+                                        return String(p.teamId) === String(userData?.teamId);
                                     }
                                 }).length === 0 && (
                                         <div className="col-span-full text-center py-20">
