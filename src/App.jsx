@@ -96,12 +96,25 @@ const TEAMS = [
     { id: 'team-5', name: 'Tim 5 (Special)', isSpecial: true },
 ];
 
+// Comprehensive City Data (Java, Sumatra, Eastern Indonesia)
 const INDONESIAN_CITIES = [
-    "Jakarta Pusat", "Jakarta Selatan", "Jakarta Barat", "Jakarta Timur", "Jakarta Utara",
-    "Surabaya", "Bandung", "Medan", "Semarang", "Makassar", "Palembang", "Tangerang",
-    "Depok", "Bekasi", "Bogor", "Malang", "Yogyakarta", "Surakarta", "Denpasar",
-    "Batam", "Pekanbaru", "Bandar Lampung", "Padang", "Samarinda", "Balikpapan",
-    "Banjarmasin", "Pontianak", "Manado", "Mataram", "Jayapura"
+    // SUMATERA
+    "Banda Aceh", "Medan", "Pematang Siantar", "Padang", "Bukittinggi", "Pekanbaru", "Dumai",
+    "Jambi", "Palembang", "Bengkulu", "Bandar Lampung", "Metro", "Pangkal Pinang", "Batam", "Tanjung Pinang",
+    // JAWA (LENGKAP)
+    "Jakarta Pusat", "Jakarta Selatan", "Jakarta Barat", "Jakarta Timur", "Jakarta Utara", "Kepulauan Seribu",
+    "Bogor", "Depok", "Tangerang", "Tangerang Selatan", "Bekasi", "Bandung", "Cimahi", "Tasikmalaya", "Sukabumi", "Cirebon", "Indramayu", "Karawang",
+    "Semarang", "Surakarta (Solo)", "Magelang", "Pekalongan", "Tegal", "Salatiga", "Yogyakarta", "Sleman", "Bantul",
+    "Surabaya", "Malang", "Batu", "Kediri", "Blitar", "Madiun", "Mojokerto", "Probolinggo", "Pasuruan", "Banyuwangi", "Jember", "Gresik", "Sidoarjo",
+    // BALI & NUSA TENGGARA
+    "Denpasar", "Singaraja", "Mataram", "Bima", "Kupang",
+    // KALIMANTAN
+    "Pontianak", "Singkawang", "Palangka Raya", "Banjarmasin", "Banjarbaru", "Samarinda", "Balikpapan", "Bontang", "Tarakan",
+    // SULAWESI
+    "Makassar", "Parepare", "Palopo", "Manado", "Bitung", "Palu", "Kendari", "Gorontalo",
+    // INDONESIA TIMUR (MALUKU & PAPUA)
+    "Ambon", "Tual", "Ternate", "Tidore Kepulauan",
+    "Jayapura", "Sorong", "Manokwari", "Merauke", "Timika", "Biak", "Wamena", "Fakfak"
 ].sort();
 
 const WORKFLOW_STEPS = [
@@ -369,8 +382,10 @@ export default function App() {
                         if (SUPER_ADMIN_EMAILS.includes(u.email) && d.role !== 'super_admin') {
                             await updateDoc(docRef, { role: 'super_admin' });
                             setUserData({ ...d, role: 'super_admin' });
+                            localStorage.setItem('robo_session', JSON.stringify({ email: u.email, name: d.displayName || u.email, photo: d.photoURL }));
                         } else {
                             setUserData(d);
+                            localStorage.setItem('robo_session', JSON.stringify({ email: u.email, name: d.displayName || u.email, photo: d.photoURL }));
                         }
                         // Redirect Logic
                         if (!d.isProfileComplete) {
@@ -1120,43 +1135,56 @@ export default function App() {
                                     <h1 className="text-2xl font-black text-center text-slate-900 tracking-tight">RoboEdu<span className="text-indigo-600">.Studio</span></h1>
                                 </div>
 
-                                {/* EMAIL PASSWORD FORM */}
-                                <form onSubmit={handleEmailAuth} className="space-y-4">
-                                    <div>
-                                        <label className="block text-left text-xs font-bold text-slate-400 mb-1 ml-1">Email</label>
-                                        <div className="relative">
-                                            <input
-                                                type="email"
-                                                required
-                                                className="w-full p-4 pl-12 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-200"
-                                                placeholder="user@sekolah.id"
-                                                value={authEmail}
-                                                onChange={e => setAuthEmail(e.target.value)}
-                                            />
-                                            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                                {(!isRegistering && !authEmail && localStorage.getItem('robo_session')) ? (() => {
+                                    try {
+                                        const c = JSON.parse(localStorage.getItem('robo_session'));
+                                        return (
+                                            <div className="animate-[fadeIn_0.3s]">
+                                                <div className="bg-slate-50 p-6 rounded-2xl mb-6 text-center border border-indigo-100 relative overflow-hidden">
+                                                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 to-purple-500"></div>
+                                                    <img src={c.photo || `https://ui-avatars.com/api/?name=${c.email}`} className="w-20 h-20 rounded-full mx-auto mb-3 shadow-md border-4 border-white bg-white object-cover" />
+                                                    <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">Selamat Datang Kembali,</p>
+                                                    <h3 className="font-black text-slate-800 text-xl truncate px-2">{c.name}</h3>
+                                                </div>
+                                                <button onClick={() => setAuthEmail(c.email)} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg hover:scale-[1.02] transition-transform flex items-center justify-center gap-2 mb-4">
+                                                    <User size={20} /> Masuk ke Akun Ini
+                                                </button>
+                                                <button onClick={() => { localStorage.removeItem('robo_session'); setIsRegistering(true); setTimeout(() => setIsRegistering(false), 10); }} className="w-full py-3 text-slate-400 hover:text-indigo-600 text-sm font-bold flex items-center justify-center gap-2 transition-colors">
+                                                    Gunakan Akun Lain
+                                                </button>
+                                            </div>
+                                        );
+                                    } catch (e) { return null; }
+                                })() : (
+                                    <form onSubmit={handleEmailAuth} className="space-y-4 animate-[fadeIn_0.3s]">
+                                        <div>
+                                            <label className="block text-left text-xs font-bold text-slate-400 mb-1 ml-1">Email</label>
+                                            <div className="relative">
+                                                <input
+                                                    type="email" required className="w-full p-4 pl-12 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-200"
+                                                    placeholder="user@sekolah.id" value={authEmail} onChange={e => setAuthEmail(e.target.value)}
+                                                />
+                                                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                                            </div>
                                         </div>
-                                    </div>
 
-                                    <div>
-                                        <label className="block text-left text-xs font-bold text-slate-400 mb-1 ml-1">Password</label>
-                                        <div className="relative">
-                                            <input
-                                                type="password"
-                                                required
-                                                className="w-full p-4 pl-12 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-200"
-                                                placeholder="••••••••"
-                                                value={authPassword}
-                                                onChange={e => setAuthPassword(e.target.value)}
-                                            />
-                                            <Key className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                                        <div>
+                                            <label className="block text-left text-xs font-bold text-slate-400 mb-1 ml-1">Password</label>
+                                            <div className="relative">
+                                                <input
+                                                    type="password" required className="w-full p-4 pl-12 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-200"
+                                                    placeholder="••••••••" value={authPassword} onChange={e => setAuthPassword(e.target.value)}
+                                                />
+                                                <Key className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                                            </div>
                                         </div>
-                                    </div>
 
-                                    <button type="submit" disabled={loadingLogin} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg hover:bg-indigo-700 flex items-center justify-center gap-3">
-                                        {loadingLogin ? <Loader2 className="animate-spin" /> : (isRegistering ? <UserPlus size={20} /> : <Shield size={20} />)}
-                                        {isRegistering ? "Daftar Akun Baru" : "Masuk"}
-                                    </button>
-                                </form>
+                                        <button type="submit" disabled={loadingLogin} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg hover:bg-indigo-700 flex items-center justify-center gap-3">
+                                            {loadingLogin ? <Loader2 className="animate-spin" /> : (isRegistering ? <UserPlus size={20} /> : <Shield size={20} />)}
+                                            {isRegistering ? "Daftar Akun Baru" : "Masuk"}
+                                        </button>
+                                    </form>
+                                )}
 
                                 <div className="mt-6 pt-6 border-t border-slate-100 text-center">
                                     <p className="text-xs text-slate-500 font-medium mb-2">
@@ -1200,9 +1228,10 @@ export default function App() {
                                     <h3 className="font-bold text-lg mb-4 flex items-center gap-2 text-slate-700"><Users size={20} /> User Terdaftar ({usersList.length})</h3>
                                     <div className="space-y-3 max-h-96 overflow-y-auto custom-scrollbar">
                                         {usersList.slice(0, 10).map((u, idx) => (
-                                            <div key={idx} className="flex items-center gap-3 p-3 hover:bg-slate-50 rounded-xl transition-colors">
+                                            <div key={idx} className="flex items-center gap-3 p-3 hover:bg-slate-50 rounded-xl transition-colors group">
                                                 <img src={u.photoURL} className="w-8 h-8 rounded-full bg-slate-200" />
                                                 <div className="flex-1"><div className="font-bold text-sm text-slate-800">{u.displayName}</div><div className="text-[10px] uppercase font-bold text-indigo-500">{u.role}</div></div>
+                                                <button onClick={() => requestConfirm("Hapus User?", `Hapus akses ${u.displayName}?`, async () => { await deleteDoc(doc(db, 'users', u.uid)); showToast("User dihapus"); }, 'danger')} className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"><Trash2 size={16} /></button>
                                             </div>
                                         ))}
                                     </div>
@@ -1630,6 +1659,11 @@ export default function App() {
                                                 <a href={p.finalLink} target="_blank" className="flex items-center justify-center gap-2 w-full py-3 bg-emerald-50 text-emerald-600 rounded-xl text-sm font-bold border border-emerald-100 hover:bg-emerald-100 transition-colors">
                                                     <LinkIcon size={16} /> Buka Hasil Final
                                                 </a>
+                                            )}
+                                            {(userData?.role === 'supervisor' || userData?.role === 'super_admin') && (
+                                                <button onClick={() => handleDeleteProject(p.id)} className="w-full mt-2 py-3 bg-red-50 text-red-500 rounded-xl text-sm font-bold border border-red-100 hover:bg-red-100 transition-colors flex items-center justify-center gap-2">
+                                                    <Trash2 size={16} /> Hapus Arsip
+                                                </button>
                                             )}
                                         </div>
                                     ))}
