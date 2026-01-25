@@ -45,8 +45,10 @@ if (API_KEY_EXISTS) {
         auth = getAuth(app);
         db = getFirestore(app);
         googleProvider = new GoogleAuthProvider();
-        // Penting untuk mobile: Local Persistence agar tidak logout saat refresh/redirect
-        setPersistence(auth, browserLocalPersistence).catch(console.error);
+        // Set persistensi lokal agar login tidak hilang saat refresh/redirect
+        setPersistence(auth, browserLocalPersistence).catch((error) => {
+            console.error("Persistence Error:", error);
+        });
     } catch (error) {
         console.error("Firebase Init Error:", error);
     }
@@ -233,51 +235,42 @@ const WeeklyBotReport = ({ projects }) => {
     );
 };
 
-const RoboLogo = ({ size = 60 }) => (
-  <svg width={size} height={size} viewBox="0 0 100 100" className="overflow-visible drop-shadow-xl">
-    <path d="M50 20 L50 35" stroke="#4f46e5" strokeWidth="4" strokeLinecap="round" />
-    <circle cx="50" cy="15" r="5" fill="#f43f5e" className="animate-pulse" />
-    <rect x="25" y="35" width="50" height="40" rx="10" fill="white" stroke="#4f46e5" strokeWidth="3" />
-    <rect x="30" y="40" width="40" height="30" rx="6" fill="#e0e7ff" />
-    <circle cx="40" cy="55" r="4" fill="#1e1b4b" />
-    <circle cx="60" cy="55" r="4" fill="#1e1b4b" />
-  </svg>
-);
-
 /* ========================================================================
    MAIN APPLICATION
    ======================================================================== */
 
 export default function App() {
-  const [user, setUser] = useState(null); // SATU-SATUNYA STATE USER AUTH
-  const [userData, setUserData] = useState(null); // DATA FIRESTORE
+  // --- STATE ---
+  const [user, setUser] = useState(null);
+  const [userData, setUserData] = useState(null);
   const [view, setView] = useState('landing'); 
+  const [isAuthChecking, setIsAuthChecking] = useState(true); // NEW: Prevent flash of landing page
   
-  // Data Containers
+  // Realtime Data
   const [projects, setProjects] = useState([]);
   const [news, setNews] = useState([]);
   const [assets, setAssets] = useState([]);
   const [usersList, setUsersList] = useState([]);
   const [pendingUsers, setPendingUsers] = useState([]);
   
-  // Content
+  // Content States
   const [weeklyContent, setWeeklyContent] = useState({ title: "Belum ada highlight", image: "" });
   const [siteLogo, setSiteLogo] = useState("https://lh3.googleusercontent.com/d/1uJHar8EYXpRnL8uaPvhePEHWG-BasH9m");
 
-  // UI
+  // UI States
   const [showPendingAlert, setShowPendingAlert] = useState(false);
   const [loadingLogin, setLoadingLogin] = useState(false);
   const [toast, setToast] = useState(null);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [spotlightIndex, setSpotlightIndex] = useState(0);
 
-  // Selection
+  // Selection States
   const [activeProject, setActiveProject] = useState(null);
   const [activeTeamId, setActiveTeamId] = useState(null);
   const [selectedNews, setSelectedNews] = useState(null);
   const [selectedPendingUser, setSelectedPendingUser] = useState(null);
 
-  // Forms
+  // Form States
   const [profileForm, setProfileForm] = useState({ username: '', school: '', city: '' });
   const [editProfileData, setEditProfileData] = useState({ displayName: '', bio: '', photoURL: '', school: '', city: '' });
   const [newProjectForm, setNewProjectForm] = useState({ title: '', isBigProject: false, teamId: 'team-1', deadline: '' });
@@ -291,7 +284,7 @@ export default function App() {
   const [aiResult, setAiResult] = useState('');
   const [imageUploadState, setImageUploadState] = useState({ isOpen: false, slotIndex: null, urlInput: '' });
 
-  // Modals
+  // Modal Toggles
   const [isAddProjectOpen, setIsAddProjectOpen] = useState(false);
   const [isAddAssetOpen, setIsAddAssetOpen] = useState(false);
   const [isEditLogoOpen, setIsEditLogoOpen] = useState(false);
@@ -315,24 +308,27 @@ export default function App() {
         }
       } catch (error) {
         console.error("Redirect error:", error);
+        // Ignore user closed popup error
         if (error.code !== 'auth/popup-closed-by-user' && error.code !== 'auth/cancelled-popup-request') {
-          showToast("Login gagal: " + error.message, "error");
+           // showToast("Login error: " + error.message, "error");
         }
-        setLoadingLogin(false);
       }
     };
-    
     checkRedirectResult();
   }, []);
 
-  // --- FIREBASE LISTENERS (FIXED) ---
+  // --- FIREBASE AUTH LISTENER (MAIN SOURCE OF TRUTH) ---
   useEffect(() => {
     if (!auth) return;
+    
+    // Start Loading
+    setIsAuthChecking(true);
+
     const unsubAuth = onAuthStateChanged(auth, async (u) => {
-      console.log("Auth state changed:", u?.email);
-      setUser(u); // Gunakan variabel user yang konsisten
+      setUser(u); // Sync local state
       
       if (u) {
+        // User is logged in (from redirect or persistence)
         const docRef = doc(db, 'users', u.uid);
         const docSnap = await getDoc(docRef);
         const email = u.email;
@@ -340,35 +336,27 @@ export default function App() {
         // 1. USER SUDAH ADA DI DATABASE
         if (docSnap.exists()) {
           const d = docSnap.data();
-          console.log("User exists in DB:", d);
           
           // Force upgrade ke super_admin jika emailnya masuk list
           if (SUPER_ADMIN_EMAILS.includes(email) && d.role !== 'super_admin') {
-             console.log("Upgrading to super_admin");
              await updateDoc(docRef, { role: 'super_admin' });
              setUserData({ ...d, role: 'super_admin' });
           } else {
              setUserData(d);
           }
 
-          // Redirect sesuai status profil
+          // Redirect Logic
           if (!d.isProfileComplete) {
-             console.log("Profile incomplete -> setup");
              setView('profile-setup');
-             // Pre-fill form jika ada data
              setProfileForm({ username: u.displayName || '', school: d.school || '', city: d.city || '' });
           } else {
-             console.log("Profile complete -> dashboard");
              setView('dashboard');
           }
           
         } else {
           // 2. USER BELUM ADA DI DATABASE
-          console.log("User NOT in DB");
-          
           if(SUPER_ADMIN_EMAILS.includes(email)) {
-             // SUPER ADMIN: BUAT AKUN LANGSUNG
-             console.log("Creating super admin account");
+             // === SUPER ADMIN FLOW ===
              const newAdmin = {
                 email: u.email, 
                 displayName: u.displayName, 
@@ -384,7 +372,7 @@ export default function App() {
              await setDoc(docRef, newAdmin);
              setUserData(newAdmin);
              
-             // Hapus dari pending jika ada
+             // Hapus dari pending jika ada (cleanup)
              const q = query(collection(db, 'pending_users'), where('email', '==', email));
              const snaps = await getDocs(q);
              snaps.forEach(async (doc) => await deleteDoc(doc.ref));
@@ -393,9 +381,8 @@ export default function App() {
              setProfileForm({ username: u.displayName || '', school: '', city: '' });
              showToast("Welcome Super Admin!");
           } else {
-             // BUKAN SUPER ADMIN: PENDING & LOGOUT
-             console.log("Adding to pending");
-             
+             // === NORMAL USER FLOW ===
+             // Add to pending if not exists
              const q = query(collection(db, 'pending_users'), where('email', '==', email));
              const querySnap = await getDocs(q);
              
@@ -409,24 +396,27 @@ export default function App() {
                  });
              }
              
+             // Kick out
              await signOut(auth);
              setUserData(null);
              setView('landing');
              setShowPendingAlert(true);
           }
         }
-        
-        setLoadingLogin(false);
       } else {
-        console.log("No user logged in");
+        // No User
         setUserData(null);
         setView('landing');
-        setLoadingLogin(false);
       }
+      
+      // Stop Loading
+      setIsAuthChecking(false);
+      setLoadingLogin(false);
     });
     return () => unsubAuth();
   }, []);
 
+  // --- DATA LISTENERS ---
   useEffect(() => {
     if (!db) return;
     const unsubProj = onSnapshot(collection(db, 'projects'), (s) => setProjects(s.docs.map(d => ({ id: d.id, ...d.data() }))));
@@ -448,14 +438,12 @@ export default function App() {
         const users = s.docs.map(d => ({ ...d.data(), uid: d.id }));
         setUsersList(users);
     });
-
     let unsubPending = () => {};
     if (userData?.role === 'super_admin' || userData?.role === 'supervisor') {
       unsubPending = onSnapshot(collection(db, 'pending_users'), (s) => {
         setPendingUsers(s.docs.map(d => ({ ...d.data(), id: d.id })));
       });
     }
-
     return () => { unsubPublicUsers(); unsubPending(); };
   }, [userData?.role]);
 
@@ -466,7 +454,7 @@ export default function App() {
      }
   }, [view, usersList]);
 
-  // --- HANDLERS (LOGIC) ---
+  // --- HANDLERS ---
   const showToast = (msg, type='success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); };
   const calculateProgress = (tasks) => { const total = WORKFLOW_STEPS.reduce((acc, s) => acc + s.tasks.length, 0); return total === 0 ? 0 : Math.round((tasks.length / total) * 100); };
   const isTaskLocked = (taskId, completedTasks) => { const idx = ALL_TASK_IDS.indexOf(taskId); return idx > 0 && !completedTasks.includes(ALL_TASK_IDS[idx - 1]); };
@@ -475,22 +463,16 @@ export default function App() {
   const requestConfirm = (title, message, action, type='danger') => { setConfirmModal({ isOpen: true, title, message, action, type }); };
   const executeConfirmAction = () => { if (confirmModal.action) confirmModal.action(); setConfirmModal({ ...confirmModal, isOpen: false }); };
 
-  // 1. AUTH & USER MGMT
+  // AUTH
   const handleGoogleLogin = async () => {
     setLoadingLogin(true);
     setShowPendingAlert(false);
-    
     try {
-        // Gunakan signInWithRedirect untuk mobile
         await signInWithRedirect(auth, googleProvider);
-        // onAuthStateChanged akan handle sisanya
     } catch (err) {
         console.error("Login error:", err);
         setLoadingLogin(false);
-        
-        if (err.code === 'auth/popup-closed-by-user') {
-            showToast("Login dibatalkan", "error");
-        } else if (err.code !== 'auth/cancelled-popup-request') {
+        if (err.code !== 'auth/popup-closed-by-user' && err.code !== 'auth/cancelled-popup-request') {
             showToast("Login Gagal: " + err.message, "error");
         }
     }
@@ -498,7 +480,7 @@ export default function App() {
 
   const handleLogout = async () => { await signOut(auth); setView('landing'); setShowMobileMenu(false); };
 
-  // 2. PROFILE (FIXED: Using 'user' instead of 'currentUser')
+  // PROFILE (Using 'user' consistent variable)
   const handleProfileSubmit = async () => {
       try {
           await updateDoc(doc(db, 'users', user.uid), {
@@ -508,16 +490,13 @@ export default function App() {
               isProfileComplete: true,
               bio: userData?.bio || "Member Baru"
           });
-          
-          // Force refresh user data
           const updatedDoc = await getDoc(doc(db, 'users', user.uid));
           setUserData(updatedDoc.data());
           setView('dashboard');
-          
           sendOneSignalNotification('mobile_push', 'Kamu berhasil login Roboedu Studio');
           showToast(`Selamat datang, ${profileForm.username}`);
       } catch (e) { 
-        console.error("Profile submit error:", e);
+        console.error(e);
         showToast("Gagal simpan profil", "error"); 
       }
   };
@@ -529,7 +508,7 @@ export default function App() {
               if (newCount >= 2) return showToast("Batas ganti nama habis!", "error");
               newCount++;
           }
-          await updateDoc(doc(db, 'users', user.uid), { // FIXED: using 'user'
+          await updateDoc(doc(db, 'users', user.uid), {
               displayName: editProfileData.displayName,
               bio: editProfileData.bio,
               photoURL: editProfileData.photoURL,
@@ -539,112 +518,7 @@ export default function App() {
       } catch(e) { showToast("Gagal update", "error"); }
   };
 
-  // 3. PROJECTS & TASKS
-  const handleAddProject = async () => {
-      if(!newProjectForm.title) return showToast("Isi judul!", "error");
-      const p = {
-          ...newProjectForm,
-          status: 'In Progress', progress: 0, isApproved: false, 
-          previewImages: newProjectForm.isBigProject ? Array(20).fill(null) : [],
-          completedTasks: [], equipment: '', script: '', feedback: '', finalLink: '', previewLink: '',
-          createdAt: new Date().toLocaleDateString(), proposalStatus: 'None',
-          teamId: (userData.role === 'supervisor' || userData.role === 'super_admin') ? newProjectForm.teamId : userData.teamId
-      };
-      await addDoc(collection(db, 'projects'), p);
-      setIsAddProjectOpen(false); showToast("Project Dibuat!");
-  };
-
-  const handleUpdateProjectFirestore = async (id, data) => {
-      try { await updateDoc(doc(db, 'projects', id), data); } catch (e) { showToast("Gagal update project", "error"); }
-  };
-
-  const handleDeleteProject = (id) => {
-      requestConfirm("Hapus Project?", "Permanen.", async () => {
-          await deleteDoc(doc(db, 'projects', id));
-          if(activeProject?.id === id) { setActiveProject(null); setView('dashboard'); }
-          showToast("Project Dihapus");
-      });
-  };
-
-  const toggleTask = (projId, taskId) => {
-      const proj = projects.find(p => p.id === projId); if (!proj) return;
-      if (userData.role === 'supervisor' || userData.role === 'super_admin') return showToast("Admin view only", "error");
-      if (isTaskLocked(taskId, proj.completedTasks)) return showToast("Tugas terkunci!", "error");
-      
-      const newTasks = proj.completedTasks.includes(taskId) ? proj.completedTasks.filter(t=>t!==taskId) : [...proj.completedTasks, taskId];
-      const newProgress = calculateProgress(newTasks);
-      const status = newProgress === 100 ? 'Completed' : proj.status;
-      handleUpdateProjectFirestore(projId, { completedTasks: newTasks, progress: newProgress, status });
-  };
-
-  const handleRemoveImage = (index) => {
-      const newImages = [...activeProject.previewImages]; newImages[index] = null;
-      handleUpdateProjectFirestore(activeProject.id, { previewImages: newImages });
-  };
-
-  const handleImageSubmit = () => {
-    if (imageUploadState.slotIndex !== null) {
-        const newImages = [...activeProject.previewImages];
-        newImages[imageUploadState.slotIndex] = imageUploadState.urlInput;
-        handleUpdateProjectFirestore(activeProject.id, { previewImages: newImages });
-        setImageUploadState({ isOpen: false, slotIndex: null, urlInput: '' });
-        showToast("Foto tersimpan!");
-    }
-  };
-
-  const handleSubmitPreview = (proj) => {
-      if(!proj.previewLink) return showToast("Link kosong!", "error");
-      handleUpdateProjectFirestore(proj.id, { status: "Preview Submitted" });
-      sendOneSignalNotification('supervisor', `Review preview: "${proj.title}"`, TEAMS.find(t=>t.id===proj.teamId)?.name);
-  };
-
-  const handleApprovalAction = (isApproved, feedback) => {
-       if(!isApproved && !feedback) return showToast("Isi revisi!", "error");
-       handleUpdateProjectFirestore(activeProject.id, { isApproved, status: isApproved ? "Approved" : "Revision Needed", feedback: isApproved ? "" : feedback });
-       sendOneSignalNotification('creator', isApproved ? "Preview Approved" : "Revisi Baru", TEAMS.find(t=>t.id===activeProject.teamId)?.name);
-  };
-
-  const handleSubmitFinalRegular = (proj) => {
-      if(!proj.finalLink) return showToast("Link kosong!", "error");
-      requestConfirm("Submit Final?", "Project ke Arsip.", () => {
-          handleUpdateProjectFirestore(proj.id, { status: "Completed", progress: 100, completedAt: new Date().toISOString() });
-          sendOneSignalNotification('supervisor', `FINAL SUBMIT: ${proj.title}`, TEAMS.find(t=>t.id===proj.teamId)?.name);
-          setView('dashboard');
-      }, 'neutral');
-  };
-
-  // Tim 5 Logic
-  const handleProposeConcept = () => {
-    if (!activeProject.finalLink) return showToast("Isi link!", "error");
-    handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Pending' });
-    sendOneSignalNotification('supervisor', `Pengajuan Konsep: "${activeProject.title}"`, 'Tim 5');
-  };
-
-  const handleReviewProposal = (isAcc, feedback) => {
-      if(isAcc) {
-          handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Approved', feedback: '' });
-          sendOneSignalNotification('creator', `Konsep DISETUJUI.`, 'Tim 5');
-      } else {
-          if (!feedback) return showToast("Isi pesan!", "error");
-          handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Revision', feedback });
-          sendOneSignalNotification('creator', `REVISI Konsep: ${feedback}`, 'Tim 5');
-      }
-  };
-
-  const handleRePropose = () => {
-    handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Pending' });
-    sendOneSignalNotification('supervisor', `Pengajuan ULANG: "${activeProject.title}"`, 'Tim 5');
-  };
-
-  const handleSubmitFinalTim5 = () => {
-      requestConfirm("Yakin Submit?", "Project selesai.", () => {
-          handleUpdateProjectFirestore(activeProject.id, { status: "Completed", progress: 100, completedAt: new Date().toISOString() });
-          sendOneSignalNotification('supervisor', `FINAL SUBMIT Tim 5: ${activeProject.title}`, 'Tim 5');
-          setView('dashboard');
-      }, 'neutral');
-  };
-  
-  // 4. ADMIN MGMT
+  // ADMIN
   const handleConfirmApproval = async () => {
       if(!selectedPendingUser) return;
       try {
@@ -658,61 +532,67 @@ export default function App() {
               isProfileComplete: false,
               nameChangeCount: 0
           };
-          
           await setDoc(doc(db, 'users', selectedPendingUser.uid), newUser);
           await deleteDoc(doc(db, 'pending_users', selectedPendingUser.id));
-          
-          setIsApprovalModalOpen(false); setSelectedPendingUser(null);
-          showToast("User Disetujui!");
-      } catch (e) {
-          console.error(e);
-          showToast("Gagal Approve", "error");
-      }
+          setIsApprovalModalOpen(false); setSelectedPendingUser(null); showToast("User Disetujui!");
+      } catch (e) { console.error(e); showToast("Gagal Approve", "error"); }
   };
 
-  const handleRejectUser = (u) => {
-      requestConfirm("Tolak?", "Hapus user.", async () => {
-          await deleteDoc(doc(db, 'pending_users', u.id));
-          showToast("Ditolak.");
-      });
-  };
+  const handleRejectUser = (u) => { requestConfirm("Tolak?", "Hapus user.", async () => { await deleteDoc(doc(db, 'pending_users', u.id)); showToast("Ditolak."); }); };
 
-  // 5. ASSETS & NEWS & LOGO
-  const handleAddAsset = async () => {
-      if(!newAssetForm.title) return;
-      await addDoc(collection(db, 'assets'), { ...newAssetForm, date: new Date().toLocaleDateString() });
-      setIsAddAssetOpen(false); showToast("Aset Ditambah");
+  // PROJECTS & OTHER LOGIC
+  const handleAddProject = async () => {
+      if(!newProjectForm.title) return showToast("Isi judul!", "error");
+      const p = { ...newProjectForm, status: 'In Progress', progress: 0, isApproved: false, previewImages: newProjectForm.isBigProject ? Array(20).fill(null) : [], completedTasks: [], equipment: '', script: '', feedback: '', finalLink: '', previewLink: '', createdAt: new Date().toLocaleDateString(), proposalStatus: 'None', teamId: (userData.role === 'supervisor' || userData.role === 'super_admin') ? newProjectForm.teamId : userData.teamId };
+      await addDoc(collection(db, 'projects'), p); setIsAddProjectOpen(false); showToast("Project Dibuat!");
   };
-  const handleDeleteAsset = (id) => {
-      requestConfirm("Hapus Aset?", "Permanen.", async () => {
-          await deleteDoc(doc(db, 'assets', id));
-          showToast("Aset Dihapus");
-      });
-  };
-  const handleSaveNews = async () => {
-      if (newsForm.id) { await updateDoc(doc(db, 'news', newsForm.id), newsForm); }
-      setIsEditNewsOpen(false); showToast("Berita Update");
-  };
-  const handleSaveLogo = async () => {
-      await setDoc(doc(db, 'site_config', 'main'), { logo: logoForm }, { merge: true });
-      setIsEditLogoOpen(false); showToast("Logo Update");
-  };
-  const handleSaveWeekly = async () => {
-      await setDoc(doc(db, 'site_config', 'main'), { weekly: weeklyForm }, { merge: true });
-      setIsEditWeeklyOpen(false); showToast("Highlight Update");
-  };
-  const handleScript = async () => {
-      setIsAILoading(true);
-      const text = await generateAIScript(aiPrompt);
-      setAiResult(text);
-      setIsAILoading(false);
-  };
+  const handleUpdateProjectFirestore = async (id, data) => { try { await updateDoc(doc(db, 'projects', id), data); } catch (e) { showToast("Gagal update project", "error"); } };
+  const handleDeleteProject = (id) => { requestConfirm("Hapus Project?", "Permanen.", async () => { await deleteDoc(doc(db, 'projects', id)); if(activeProject?.id === id) { setActiveProject(null); setView('dashboard'); } showToast("Project Dihapus"); }); };
+  const toggleTask = (projId, taskId) => { const proj = projects.find(p => p.id === projId); if (!proj) return; if (userData.role === 'supervisor' || userData.role === 'super_admin') return showToast("Admin view only", "error"); if (isTaskLocked(taskId, proj.completedTasks)) return showToast("Tugas terkunci!", "error"); const newTasks = proj.completedTasks.includes(taskId) ? proj.completedTasks.filter(t=>t!==taskId) : [...proj.completedTasks, taskId]; const newProgress = calculateProgress(newTasks); const status = newProgress === 100 ? 'Completed' : proj.status; handleUpdateProjectFirestore(projId, { completedTasks: newTasks, progress: newProgress, status }); };
+  const handleRemoveImage = (index) => { const newImages = [...activeProject.previewImages]; newImages[index] = null; handleUpdateProjectFirestore(activeProject.id, { previewImages: newImages }); };
+  const handleImageSubmit = () => { if (imageUploadState.slotIndex !== null) { const newImages = [...activeProject.previewImages]; newImages[imageUploadState.slotIndex] = imageUploadState.urlInput; handleUpdateProjectFirestore(activeProject.id, { previewImages: newImages }); setImageUploadState({ isOpen: false, slotIndex: null, urlInput: '' }); showToast("Foto tersimpan!"); } };
+  const handleSubmitPreview = (proj) => { if(!proj.previewLink) return showToast("Link kosong!", "error"); handleUpdateProjectFirestore(proj.id, { status: "Preview Submitted" }); sendOneSignalNotification('supervisor', `Review preview: "${proj.title}"`, TEAMS.find(t=>t.id===proj.teamId)?.name); };
+  const handleApprovalAction = (isApproved, feedback) => { if(!isApproved && !feedback) return showToast("Isi revisi!", "error"); handleUpdateProjectFirestore(activeProject.id, { isApproved, status: isApproved ? "Approved" : "Revision Needed", feedback: isApproved ? "" : feedback }); sendOneSignalNotification('creator', isApproved ? "Preview Approved" : "Revisi Baru", TEAMS.find(t=>t.id===activeProject.teamId)?.name); };
+  const handleSubmitFinalRegular = (proj) => { if(!proj.finalLink) return showToast("Link kosong!", "error"); requestConfirm("Submit Final?", "Project ke Arsip.", () => { handleUpdateProjectFirestore(proj.id, { status: "Completed", progress: 100, completedAt: new Date().toISOString() }); sendOneSignalNotification('supervisor', `FINAL SUBMIT: ${proj.title}`, TEAMS.find(t=>t.id===proj.teamId)?.name); setView('dashboard'); }, 'neutral'); };
+  const handleProposeConcept = () => { if (!activeProject.finalLink) return showToast("Isi link!", "error"); handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Pending' }); sendOneSignalNotification('supervisor', `Pengajuan: ${activeProject.title}`, 'Tim 5'); };
+  const handleReviewProposal = (isAcc, feedback) => { if(isAcc) { handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Approved', feedback: '' }); sendOneSignalNotification('creator', `Konsep DISETUJUI.`, 'Tim 5'); } else { if (!feedback) return showToast("Isi pesan!", "error"); handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Revision', feedback }); sendOneSignalNotification('creator', `REVISI Konsep: ${feedback}`, 'Tim 5'); } };
+  const handleRePropose = () => { handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Pending' }); sendOneSignalNotification('supervisor', `Pengajuan ULANG: "${activeProject.title}"`, 'Tim 5'); };
+  const handleSubmitFinalTim5 = () => { requestConfirm("Yakin Submit?", "Project selesai.", () => { handleUpdateProjectFirestore(activeProject.id, { status: "Completed", progress: 100, completedAt: new Date().toISOString() }); sendOneSignalNotification('supervisor', `FINAL SUBMIT Tim 5: ${activeProject.title}`, 'Tim 5'); setView('dashboard'); }, 'neutral'); };
+  const handleAddAsset = () => { if(!newAssetForm.title) return; await addDoc(collection(db, 'assets'), { ...newAssetForm, date: new Date().toLocaleDateString() }); setIsAddAssetOpen(false); showToast("Aset Ditambah"); };
+  const handleDeleteAsset = (id) => { requestConfirm("Hapus Aset?", "Permanen.", async () => { await deleteDoc(doc(db, 'assets', id)); showToast("Aset Dihapus"); }); };
+  const handleSaveNews = async () => { if (newsForm.id) { await updateDoc(doc(db, 'news', newsForm.id), newsForm); } setIsEditNewsOpen(false); showToast("Berita Update"); };
+  const handleSaveLogo = async () => { await setDoc(doc(db, 'site_config', 'main'), { logo: logoForm }, { merge: true }); setIsEditLogoOpen(false); showToast("Logo Update"); };
+  const handleSaveWeekly = async () => { await setDoc(doc(db, 'site_config', 'main'), { weekly: weeklyForm }, { merge: true }); setIsEditWeeklyOpen(false); showToast("Highlight Update"); };
+  const handleScript = async () => { setIsAILoading(true); const text = await generateAIScript(aiPrompt); setAiResult(text); setIsAILoading(false); };
   
-  // UI Handlers
   const handleOpenApproveModal = (u) => { setSelectedPendingUser(u); setApprovalForm({ role: 'creator', teamId: 'team-1' }); setIsApprovalModalOpen(true); };
   const handleEditNewsUI = (item) => { setNewsForm(item); setIsEditNewsOpen(true); };
 
-  // Styles
+  // --- SAFETY CHECK RENDER ---
+  if (!API_KEY_EXISTS) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-100 p-8 text-center font-sans">
+        <div className="max-w-md bg-white p-8 rounded-3xl shadow-xl">
+            <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+            <h1 className="text-2xl font-black text-slate-800 mb-2">Konfigurasi Hilang!</h1>
+            <p className="text-slate-500 mb-4 text-sm">Website ini belum terhubung ke Firebase.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // --- RENDER LOADING SCREEN (AUTH CHECK) ---
+  // Ini penting agar tidak terjadi "flash" landing page sebelum auth selesai
+  if (isAuthChecking || loadingLogin) {
+    return (
+      <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center">
+        <Loader2 className="w-12 h-12 animate-spin text-indigo-600 mb-4" />
+        <p className="text-slate-600 font-bold text-sm">Memuat RoboEdu Studio...</p>
+      </div>
+    );
+  }
+
+  // --- RENDER MAIN UI ---
   const globalStyles = `
     @keyframes float { 0% { transform: translateY(0px); } 50% { transform: translateY(-6px); } 100% { transform: translateY(0px); } }
     @keyframes blob { 0% { transform: translate(0px, 0px) scale(1); } 33% { transform: translate(30px, -50px) scale(1.1); } 66% { transform: translate(-20px, 20px) scale(0.9); } 100% { transform: translate(0px, 0px) scale(1); } }
@@ -725,35 +605,6 @@ export default function App() {
     .custom-scrollbar::-webkit-scrollbar { width: 4px; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
   `;
-
-  // --- RENDER ---
-  // Show loading during redirect
-  if (loadingLogin) {
-    return (
-      <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="w-12 h-12 animate-spin text-indigo-600 mx-auto mb-4" />
-          <p className="text-slate-600 font-bold">Memproses login...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // --- SAFETY CHECK RENDER ---
-  if (!API_KEY_EXISTS) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-100 p-8 text-center font-sans">
-        <div className="max-w-md bg-white p-8 rounded-3xl shadow-xl">
-            <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />
-            <h1 className="text-2xl font-black text-slate-800 mb-2">Konfigurasi Hilang!</h1>
-            <p className="text-slate-500 mb-4 text-sm">Website ini belum terhubung ke Firebase. Mohon masukkan <b>Environment Variables</b> (API Key) di Dashboard Vercel.</p>
-            <div className="bg-slate-100 p-4 rounded-xl text-xs text-left font-mono text-slate-600 break-all border border-slate-200">
-                VITE_FIREBASE_API_KEY=...<br/>VITE_FIREBASE_AUTH_DOMAIN=...
-            </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] font-sans text-slate-800 relative w-full overflow-x-hidden selection:bg-indigo-200 selection:text-indigo-900">
@@ -859,7 +710,7 @@ export default function App() {
         </div>
       )}
 
-      {/* --- CONTENT AREA --- */}
+      {/* --- CONTENT AREA (SAMA SEPERTI SEBELUMNYA) --- */}
       <div className="flex-1 p-4 md:p-8 pb-32 relative z-10 w-full min-h-screen">
         <div className="max-w-7xl mx-auto w-full">
 
@@ -984,7 +835,7 @@ export default function App() {
                         </div>
                         <div className="space-y-4">
                             <div className="text-center text-slate-400 text-xs font-bold mb-4">LOGIN GOOGLE</div>
-                            <button onClick={handleGoogleLogin} disabled={loadingLogin} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-200 hover:bg-indigo-700 hover:scale-[1.02] transition-all flex items-center justify-center gap-3">{loadingLogin ? <Loader2 className="animate-spin"/> : <Shield size={20}/>} Sign in with Google</button>
+                            <button onClick={handleGoogleLogin} disabled={loadingLogin} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg hover:bg-indigo-700 flex items-center justify-center gap-3">{loadingLogin ? <Loader2 className="animate-spin"/> : <Shield size={20}/>} Sign in with Google</button>
                         </div>
                     </div>
                     <button onClick={() => setView('landing')} className="mt-8 flex items-center gap-2 text-slate-400 text-xs font-bold hover:text-indigo-600 transition-colors"><ChevronLeft size={14}/> Kembali ke Beranda</button>
@@ -1469,7 +1320,7 @@ export default function App() {
            </div>
            <div><label className="block text-xs font-bold text-slate-500 mb-1">Bio Singkat</label><textarea className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:border-indigo-500 h-24 resize-none" value={editProfileData.bio} onChange={e => setEditProfileData({...editProfileData, bio: e.target.value})} /></div>
            
-           {/* READ ONLY FIELDS */}
+           {/* READ ONLY FIELDS (FIXED: USING user? or userData?) */}
            <div className="grid grid-cols-2 gap-4">
                <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Sekolah</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={userData?.school || '-'} /></div>
                <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Kota</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={userData?.city || '-'} /></div>
@@ -1548,7 +1399,6 @@ export default function App() {
                 <span className="bg-indigo-50 text-indigo-600 px-3 py-1 rounded-lg text-[10px] font-bold uppercase mb-4 inline-block">{selectedNews.category}</span>
                 <h2 className="text-2xl font-black text-slate-800 mb-4 leading-tight">{selectedNews.title}</h2>
                 <div className="text-sm text-slate-600 leading-relaxed bg-slate-50 p-6 rounded-[2rem] mb-4 border border-slate-100 font-medium whitespace-pre-line">{selectedNews.content}</div>
-                <div className="text-xs text-slate-400 font-bold text-right">Diposting: {selectedNews.date}</div>
             </div>
         )}
       </Modal>
