@@ -1526,25 +1526,35 @@ export default function App() {
                             id="photo-upload"
                             accept="image/*"
                             className="hidden"
-                            onChange={async (e) => {
+                            onChange={(e) => {
                                 const file = e.target.files[0];
                                 if (!file) return;
 
-                                if (file.size > 2 * 1024 * 1024) {
-                                    return showToast("Ukuran foto maksimal 2MB!", "error");
-                                }
+                                // Base64 Storage Strategy (No Firebase Storage needed)
+                                const reader = new FileReader();
+                                reader.onload = (event) => {
+                                    const img = new Image();
+                                    img.onload = () => {
+                                        const canvas = document.createElement('canvas');
+                                        const ctx = canvas.getContext('2d');
 
-                                try {
-                                    showToast("Mengupload foto...");
-                                    const storageRef = ref(storage, `profile_photos/${user.uid}_${Date.now()}.jpg`);
-                                    await uploadBytes(storageRef, file);
-                                    const photoURL = await getDownloadURL(storageRef);
-                                    setEditProfileData({ ...editProfileData, photoURL });
-                                    showToast("Foto berhasil diupload! ✅");
-                                } catch (err) {
-                                    console.error("Upload error:", err);
-                                    showToast("Gagal upload foto: " + err.message, "error");
-                                }
+                                        // Resize to 200x200 for profile optimization
+                                        const maxWidth = 200;
+                                        const scale = maxWidth / img.width;
+                                        canvas.width = maxWidth;
+                                        canvas.height = img.height * scale;
+
+                                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+                                        // Compress to JPEG 0.7 quality
+                                        const base64String = canvas.toDataURL('image/jpeg', 0.7);
+
+                                        setEditProfileData({ ...editProfileData, photoURL: base64String });
+                                        showToast("Foto siap disimpan!");
+                                    };
+                                    img.src = event.target.result;
+                                };
+                                reader.readAsDataURL(file);
                             }}
                         />
                         <div className="flex items-center gap-4 mb-3">
