@@ -501,7 +501,23 @@ export default function App() {
 
     // --- HANDLERS ---
     const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); };
-    const isTaskLocked = (taskId, completedTasks) => { const idx = ALL_TASK_IDS.indexOf(taskId); return idx > 0 && !completedTasks.includes(ALL_TASK_IDS[idx - 1]); };
+    // STRICT SEQUENCE LOCK: Enforce step-by-step progress
+    const isTaskLocked = (taskId, completedTasks) => {
+        const idx = ALL_TASK_IDS.indexOf(taskId);
+
+        // 1. Basic Sequential Lock (Must complete previous task first)
+        if (idx > 0 && !completedTasks.includes(ALL_TASK_IDS[idx - 1])) return true;
+
+        // 2. Gatekeeper Logic (Special Step 4 -> Step 5 Block)
+        // If current task is in Step 5 (Final), check if Project is Approved
+        const step5Tasks = ['t5-1', 't5-2'];
+        if (step5Tasks.includes(taskId)) {
+            // Task in Final Step is LOCKED if Project is NOT Approved yet
+            if (!activeProject?.isApproved) return true;
+        }
+
+        return false;
+    };
     const autoCorrectGDriveLink = (url) => { const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/); return match && match[1] ? `https://lh3.googleusercontent.com/d/${match[1]}` : url; };
 
     const requestConfirm = (title, message, action, type = 'danger') => { setConfirmModal({ isOpen: true, title, message, action, type }); };
