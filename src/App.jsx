@@ -26,6 +26,8 @@ import {
   getFirestore, doc, setDoc, getDoc, updateDoc, deleteDoc, 
   collection, addDoc, onSnapshot, query, where, orderBy, getDocs 
 } from "firebase/firestore";
+// IMPORT STORAGE
+import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 /* ========================================================================
@@ -43,14 +45,14 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
-let app, auth, db;
+let app, auth, db, storage;
 
 if (API_KEY_EXISTS) {
     try {
         app = initializeApp(firebaseConfig);
         auth = getAuth(app);
         db = getFirestore(app);
-        // Penting: Set persistensi agar sesi tidak hilang saat refresh
+        storage = getStorage(app); // Initialize Storage
         setPersistence(auth, browserLocalPersistence).catch(console.error);
     } catch (error) {
         console.error("Firebase Init Error:", error);
@@ -273,12 +275,11 @@ export default function App() {
   const [selectedNews, setSelectedNews] = useState(null);
   const [selectedPendingUser, setSelectedPendingUser] = useState(null);
 
-  // Form States (Login)
+  // Form States
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
 
-  // Form States (Data)
   const [profileForm, setProfileForm] = useState({ username: '', school: '', city: '' });
   const [editProfileData, setEditProfileData] = useState({ displayName: '', bio: '', photoURL: '', school: '', city: '' });
   const [newProjectForm, setNewProjectForm] = useState({ title: '', isBigProject: false, teamId: 'team-1', deadline: '' });
@@ -304,86 +305,79 @@ export default function App() {
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', action: null, type: 'neutral' });
   const [isAILoading, setIsAILoading] = useState(false);
 
-  // --- FIREBASE AUTH LISTENER (THE CORE LOGIC) ---
+  // --- HELPERS ---
+  const calculateProgress = (tasks) => { 
+    const total = WORKFLOW_STEPS.reduce((acc, s) => acc + s.tasks.length, 0); 
+    return total === 0 ? 0 : Math.round((tasks.length / total) * 100); 
+  };
+
+  const getWeeklyAnalytics = (teamId) => {
+    const data = [0,0,0,0,0,0,0];
+    const now = new Date();
+    const day = now.getDay();
+    const diff = day === 0 ? 6 : day - 1;
+    const start = new Date(now);
+    start.setDate(now.getDate() - diff);
+    start.setHours(0,0,0,0);
+    
+    projects.forEach(p => {
+      if(p.status === 'Completed' && p.completedAt) {
+        const d = new Date(p.completedAt);
+        if(d >= start && (teamId === 'all' || p.teamId === teamId)) {
+          const idx = d.getDay() === 0 ? 6 : d.getDay() - 1;
+          data[idx]++;
+        }
+      }
+    });
+    return data;
+  };
+
+  // --- FIREBASE AUTH LISTENER ---
   useEffect(() => {
     if (!auth) return;
-    
-    // Start Checking
     setIsAuthChecking(true);
-
     const unsubAuth = onAuthStateChanged(auth, async (u) => {
       try {
-        setUser(u); // Sync local state user
-        
+        setUser(u);
         if (u) {
           const docRef = doc(db, 'users', u.uid);
           const docSnap = await getDoc(docRef);
-          const email = u.email;
-          
-          // 1. CEK APAKAH USER ADA DI DATABASE UTAMA
           if (docSnap.exists()) {
             const d = docSnap.data();
-            
-            // Force upgrade Super Admin jika emailnya masuk list tapi role bukan super_admin
-            if (SUPER_ADMIN_EMAILS.includes(email) && d.role !== 'super_admin') {
+            if (SUPER_ADMIN_EMAILS.includes(u.email) && d.role !== 'super_admin') {
                await updateDoc(docRef, { role: 'super_admin' });
                setUserData({ ...d, role: 'super_admin' });
             } else {
                setUserData(d);
             }
-
             // Redirect Logic
             if (!d.isProfileComplete) {
                setView('profile-setup');
-               setProfileForm({ username: d.displayName || '', school: d.school || '', city: d.city || '' });
+               setProfileForm({ username: u.displayName || '', school: d.school || '', city: d.city || '' });
             } else {
                setView('dashboard');
             }
-            
           } else {
-            // 2. USER TIDAK ADA DI DATABASE
-            
-            if(SUPER_ADMIN_EMAILS.includes(email)) {
-               // === SUPER ADMIN FLOW: BUAT AKUN BARU OTOMATIS ===
+            // User not in DB
+            if(SUPER_ADMIN_EMAILS.includes(u.email)) {
                const newAdmin = {
-                  email: u.email, 
-                  displayName: "Super Admin", 
-                  photoURL: `https://ui-avatars.com/api/?name=${u.email}&background=random`,
-                  role: 'super_admin', 
-                  isProfileComplete: false, 
-                  nameChangeCount: 0, 
-                  uid: u.uid,
-                  school: '',
-                  city: '',
-                  bio: 'Super Administrator'
+                  email: u.email, displayName: u.displayName || "Super Admin", photoURL: u.photoURL || `https://ui-avatars.com/api/?name=${u.email}&background=random`,
+                  role: 'super_admin', isProfileComplete: false, nameChangeCount: 0, uid: u.uid, school: '', city: '', bio: 'Super Administrator'
                };
-               
                await setDoc(docRef, newAdmin);
                setUserData(newAdmin);
                
-               // Bersihkan dari pending
-               const q = query(collection(db, 'pending_users'), where('email', '==', email));
+               const q = query(collection(db, 'pending_users'), where('email', '==', u.email));
                const snaps = await getDocs(q);
                snaps.forEach(async (doc) => await deleteDoc(doc.ref));
 
                setView('profile-setup');
-               showToast("Akun Super Admin Dibuat!");
             } else {
-               // === NORMAL USER FLOW ===
-               const q = query(collection(db, 'pending_users'), where('email', '==', email));
+               const q = query(collection(db, 'pending_users'), where('email', '==', u.email));
                const querySnap = await getDocs(q);
-               
                if (querySnap.empty) {
-                   await addDoc(collection(db, 'pending_users'), {
-                       email, 
-                       displayName: "New User", 
-                       photoURL: `https://ui-avatars.com/api/?name=${u.email}&background=random`,
-                       date: new Date().toLocaleDateString(), 
-                       uid: u.uid
-                   });
+                   await addDoc(collection(db, 'pending_users'), { email: u.email, displayName: "New User", photoURL: `https://ui-avatars.com/api/?name=${u.email}`, date: new Date().toLocaleDateString(), uid: u.uid });
                }
-               
-               // KICK OUT
                await signOut(auth);
                setUserData(null);
                setView('landing');
@@ -391,15 +385,14 @@ export default function App() {
             }
           }
         } else {
-          // NO USER
           setUserData(null);
           setView('landing');
         }
       } catch (err) {
-          console.error("Auth Listener Error:", err);
+        console.error("Auth Error:", err);
       } finally {
-          setIsAuthChecking(false);
-          setLoadingLogin(false);
+        setIsAuthChecking(false);
+        setLoadingLogin(false);
       }
     });
     return () => unsubAuth();
@@ -412,11 +405,7 @@ export default function App() {
     const unsubNews = onSnapshot(collection(db, 'news'), (s) => setNews(s.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubAssets = onSnapshot(collection(db, 'assets'), (s) => setAssets(s.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubConfig = onSnapshot(doc(db, 'site_config', 'main'), (d) => {
-      if(d.exists()) {
-        const data = d.data();
-        if(data.logo) setSiteLogo(data.logo);
-        if(data.weekly) setWeeklyContent(data.weekly);
-      }
+      if(d.exists()) { const data = d.data(); if(data.logo) setSiteLogo(data.logo); if(data.weekly) setWeeklyContent(data.weekly); }
     });
     return () => { unsubProj(); unsubNews(); unsubAssets(); unsubConfig(); };
   }, []);
@@ -445,70 +434,61 @@ export default function App() {
 
   // --- HANDLERS ---
   const showToast = (msg, type='success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); };
-  const calculateProgress = (tasks) => { const total = WORKFLOW_STEPS.reduce((acc, s) => acc + s.tasks.length, 0); return total === 0 ? 0 : Math.round((tasks.length / total) * 100); };
   const isTaskLocked = (taskId, completedTasks) => { const idx = ALL_TASK_IDS.indexOf(taskId); return idx > 0 && !completedTasks.includes(ALL_TASK_IDS[idx - 1]); };
   const autoCorrectGDriveLink = (url) => { const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/); return match && match[1] ? `https://lh3.googleusercontent.com/d/${match[1]}` : url; };
 
   const requestConfirm = (title, message, action, type='danger') => { setConfirmModal({ isOpen: true, title, message, action, type }); };
   const executeConfirmAction = () => { if (confirmModal.action) confirmModal.action(); setConfirmModal({ ...confirmModal, isOpen: false }); };
 
-  // --- EMAIL/PASSWORD AUTH HANDLER ---
+  // AUTH
   const handleEmailAuth = async (e) => {
     e.preventDefault();
     setLoadingLogin(true);
     setShowPendingAlert(false);
-
     try {
         if (isRegistering) {
             await createUserWithEmailAndPassword(auth, authEmail, authPassword);
-            // onAuthStateChanged akan handle logic create user/pending
         } else {
             await signInWithEmailAndPassword(auth, authEmail, authPassword);
-            // onAuthStateChanged akan handle logic redirect
         }
     } catch (err) {
-        console.error("Auth error:", err);
         let errorMsg = err.message;
         if (err.code === 'auth/invalid-credential') errorMsg = "Email atau password salah.";
         if (err.code === 'auth/email-already-in-use') errorMsg = "Email ini sudah terdaftar.";
-        if (err.code === 'auth/weak-password') errorMsg = "Password terlalu lemah (min 6 karakter).";
-        
         showToast(errorMsg, "error");
-        setLoadingLogin(false); // Stop loading if error
+        setLoadingLogin(false);
     }
   };
 
   const handleLogout = async () => { await signOut(auth); setView('landing'); setShowMobileMenu(false); };
 
-  // PROFILE (Using 'user' consistent variable)
+  // PROFILE
   const handleProfileSubmit = async () => {
-      try {
-          // 1. Update ke Firestore
-          await updateDoc(doc(db, 'users', user.uid), {
-              displayName: profileForm.username,
-              school: profileForm.school,
-              city: profileForm.city,
-              isProfileComplete: true, // Pastikan flag ini true
-              bio: userData?.bio || "Member Baru"
-          });
-          
-          // 2. Ambil data terbaru langsung dari Firestore untuk memastikan state sinkron
-          const updatedDocSnap = await getDoc(doc(db, 'users', user.uid));
-          
-          if (updatedDocSnap.exists()) {
-              const updatedData = updatedDocSnap.data();
-              // 3. Update State Lokal DULU
-              setUserData(updatedData);
-              // 4. Baru pindah halaman
+    if (!user) return;
+    try {
+        await updateDoc(doc(db, 'users', user.uid), {
+            displayName: profileForm.username,
+            school: profileForm.school,
+            city: profileForm.city,
+            isProfileComplete: true,
+            bio: userData?.bio || "Member Baru"
+        });
+        
+        const updatedDocSnap = await getDoc(doc(db, 'users', user.uid));
+        if (updatedDocSnap.exists()) {
+            const updatedData = updatedDocSnap.data();
+            setUserData(updatedData);
+            
+            if(updatedData.role === 'super_admin' || updatedData.role === 'supervisor') {
+              setView('team-list');
+            } else {
               setView('dashboard');
-              
-              sendOneSignalNotification('mobile_push', 'Kamu berhasil login Roboedu Studio');
-              showToast(`Selamat datang, ${profileForm.username}`);
-          }
-      } catch (e) { 
-        console.error("Profile submit error:", e);
-        showToast("Gagal simpan profil: " + e.message, "error"); 
-      }
+            }
+            showToast(`Selamat datang, ${profileForm.username}`);
+        }
+    } catch(e) { 
+      showToast("Gagal: " + e.message, "error"); 
+    }
   };
 
   const handleUpdateProfile = async () => {
@@ -518,11 +498,8 @@ export default function App() {
               if (newCount >= 2) return showToast("Batas ganti nama habis!", "error");
               newCount++;
           }
-          await updateDoc(doc(db, 'users', user.uid), { // user.uid consistent
-              displayName: editProfileData.displayName,
-              bio: editProfileData.bio,
-              photoURL: editProfileData.photoURL,
-              nameChangeCount: newCount
+          await updateDoc(doc(db, 'users', user.uid), {
+              displayName: editProfileData.displayName, bio: editProfileData.bio, photoURL: editProfileData.photoURL, nameChangeCount: newCount
           });
           setIsEditProfileOpen(false); showToast("Profil diupdate!");
       } catch(e) { showToast("Gagal update", "error"); }
@@ -533,33 +510,19 @@ export default function App() {
       if(!selectedPendingUser) return;
       try {
           const newUser = {
-              uid: selectedPendingUser.uid, 
-              email: selectedPendingUser.email,
-              displayName: selectedPendingUser.displayName,
-              photoURL: selectedPendingUser.photoURL,
-              role: approvalForm.role,
-              teamId: approvalForm.role === 'creator' ? approvalForm.teamId : (approvalForm.role === 'tim_khusus' ? 'team-5' : null),
-              isProfileComplete: false,
-              nameChangeCount: 0
+              uid: selectedPendingUser.uid, email: selectedPendingUser.email, displayName: selectedPendingUser.displayName, photoURL: selectedPendingUser.photoURL, role: approvalForm.role, teamId: approvalForm.role === 'creator' ? approvalForm.teamId : (approvalForm.role === 'tim_khusus' ? 'team-5' : null), isProfileComplete: false, nameChangeCount: 0
           };
-          
-          // Ensure UID exists
-          if (!newUser.uid) throw new Error("UID Missing");
+          if (!newUser.uid) { showToast("Error: UID Missing", "error"); return; }
 
-          await setDoc(doc(db, 'users', newUser.uid), newUser);
+          await setDoc(doc(db, 'users', selectedPendingUser.uid), newUser);
           await deleteDoc(doc(db, 'pending_users', selectedPendingUser.id));
           setIsApprovalModalOpen(false); setSelectedPendingUser(null); showToast("User Disetujui!");
-      } catch (e) { console.error(e); showToast("Gagal Approve: " + e.message, "error"); }
+      } catch (e) { showToast("Gagal Approve", "error"); }
   };
-
   const handleRejectUser = (u) => { requestConfirm("Tolak?", "Hapus user.", async () => { await deleteDoc(doc(db, 'pending_users', u.id)); showToast("Ditolak."); }); };
 
-  // PROJECTS & OTHER LOGIC
-  const handleAddProject = async () => {
-      if(!newProjectForm.title) return showToast("Isi judul!", "error");
-      const p = { ...newProjectForm, status: 'In Progress', progress: 0, isApproved: false, previewImages: newProjectForm.isBigProject ? Array(20).fill(null) : [], completedTasks: [], equipment: '', script: '', feedback: '', finalLink: '', previewLink: '', createdAt: new Date().toLocaleDateString(), proposalStatus: 'None', teamId: (userData.role === 'supervisor' || userData.role === 'super_admin') ? newProjectForm.teamId : userData.teamId };
-      await addDoc(collection(db, 'projects'), p); setIsAddProjectOpen(false); showToast("Project Dibuat!");
-  };
+  // PROJECTS
+  const handleAddProject = async () => { if(!newProjectForm.title) return showToast("Isi judul!", "error"); const p = { ...newProjectForm, status: 'In Progress', progress: 0, isApproved: false, previewImages: newProjectForm.isBigProject ? Array(20).fill(null) : [], completedTasks: [], equipment: '', script: '', feedback: '', finalLink: '', previewLink: '', createdAt: new Date().toLocaleDateString(), proposalStatus: 'None', teamId: (userData.role === 'supervisor' || userData.role === 'super_admin') ? newProjectForm.teamId : userData.teamId }; await addDoc(collection(db, 'projects'), p); setIsAddProjectOpen(false); showToast("Project Dibuat!"); };
   const handleUpdateProjectFirestore = async (id, data) => { try { await updateDoc(doc(db, 'projects', id), data); } catch (e) { showToast("Gagal update project", "error"); } };
   const handleDeleteProject = (id) => { requestConfirm("Hapus Project?", "Permanen.", async () => { await deleteDoc(doc(db, 'projects', id)); if(activeProject?.id === id) { setActiveProject(null); setView('dashboard'); } showToast("Project Dihapus"); }); };
   const toggleTask = (projId, taskId) => { const proj = projects.find(p => p.id === projId); if (!proj) return; if (userData.role === 'supervisor' || userData.role === 'super_admin') return showToast("Admin view only", "error"); if (isTaskLocked(taskId, proj.completedTasks)) return showToast("Tugas terkunci!", "error"); const newTasks = proj.completedTasks.includes(taskId) ? proj.completedTasks.filter(t=>t!==taskId) : [...proj.completedTasks, taskId]; const newProgress = calculateProgress(newTasks); const status = newProgress === 100 ? 'Completed' : proj.status; handleUpdateProjectFirestore(projId, { completedTasks: newTasks, progress: newProgress, status }); };
@@ -589,7 +552,7 @@ export default function App() {
         <div className="max-w-md bg-white p-8 rounded-3xl shadow-xl">
             <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />
             <h1 className="text-2xl font-black text-slate-800 mb-2">Konfigurasi Hilang!</h1>
-            <p className="text-slate-500 mb-4 text-sm">Website ini belum terhubung ke Firebase. Mohon masukkan <b>Environment Variables</b> (API Key) di Dashboard Vercel.</p>
+            <p className="text-slate-500 mb-4 text-sm">Website ini belum terhubung ke Firebase.</p>
         </div>
       </div>
     );
@@ -605,7 +568,7 @@ export default function App() {
     );
   }
 
-  // --- RENDER MAIN UI ---
+  // Styles
   const globalStyles = `
     @keyframes float { 0% { transform: translateY(0px); } 50% { transform: translateY(-6px); } 100% { transform: translateY(0px); } }
     @keyframes blob { 0% { transform: translate(0px, 0px) scale(1); } 33% { transform: translate(30px, -50px) scale(1.1); } 66% { transform: translate(-20px, 20px) scale(0.9); } 100% { transform: translate(0px, 0px) scale(1); } }
@@ -648,7 +611,7 @@ export default function App() {
                 {user ? (
                     <div className="flex items-center gap-3 pl-4 border-l border-slate-200">
                         <div className="text-right">
-                            <p className="text-xs font-bold text-slate-800">{userData?.displayName || 'User'}</p>
+                            <p className="text-xs font-bold text-slate-800">{userData?.displayName || user.email}</p>
                             <p className="text-[10px] text-indigo-600 font-bold uppercase tracking-wider">{userData?.role?.replace('_', ' ')}</p>
                         </div>
                         {/* Only show Settings if profile is complete */}
@@ -658,7 +621,7 @@ export default function App() {
                                 <div className="absolute bottom-0 right-0 w-3 h-3 bg-white rounded-full border border-slate-200 flex items-center justify-center"><Settings size={8} className="text-slate-500"/></div>
                             </button>
                         )}
-                        {!userData?.isProfileComplete && <img src={user.photoURL} className="w-10 h-10 rounded-full border-2 border-slate-200 bg-slate-100 object-cover"/>}
+                        {!userData?.isProfileComplete && <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.email}`} className="w-10 h-10 rounded-full border-2 border-slate-200 bg-slate-100 object-cover"/>}
                         
                         {userData?.role === 'super_admin' && (
                            <button onClick={() => setView('user-management')} className="relative p-2 bg-indigo-50 rounded-full text-indigo-600 hover:bg-indigo-100 transition-colors" title="Manajemen User">
@@ -692,9 +655,9 @@ export default function App() {
                             setEditProfileData(userData); setIsEditProfileOpen(true); setShowMobileMenu(false); 
                         }
                     }}>
-                        <img src={userData?.photoURL} className="w-12 h-12 rounded-full border border-slate-200"/>
+                        <img src={userData?.photoURL || user.photoURL} className="w-12 h-12 rounded-full border border-slate-200"/>
                         <div>
-                            <p className="font-bold text-slate-800">{userData?.displayName}</p>
+                            <p className="font-bold text-slate-800">{userData?.displayName || user.email}</p>
                             <div className="flex items-center gap-2">
                                 <p className="text-xs text-indigo-600 font-black uppercase">{userData?.role?.replace('_', ' ')}</p>
                                 {userData?.isProfileComplete && <span className="text-[10px] text-slate-400 bg-white px-1 rounded border">Edit Profil</span>}
@@ -723,7 +686,7 @@ export default function App() {
         </div>
       )}
 
-      {/* --- CONTENT AREA --- */}
+      {/* --- CONTENT AREA (SAMA SEPERTI SEBELUMNYA) --- */}
       <div className="flex-1 p-4 md:p-8 pb-32 relative z-10 w-full min-h-screen">
         <div className="max-w-7xl mx-auto w-full">
 
@@ -875,7 +838,7 @@ export default function App() {
                                         value={authPassword} 
                                         onChange={e => setAuthPassword(e.target.value)}
                                     />
-                                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                                    <Key className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                                 </div>
                             </div>
 
@@ -979,7 +942,7 @@ export default function App() {
             )}
 
             {/* Dashboard & Project Detail */}
-            {view === 'dashboard' && userData && (
+            {view === 'dashboard' && userData && ( // Added safety check
                 <div className="pt-20 animate-[fadeIn_0.3s]">
                            {(userData?.role === 'supervisor' || userData?.role === 'super_admin') && activeTeamId && (
                                <button onClick={() => { setActiveTeamId(null); setView('team-list'); }} className="mb-4 text-xs font-bold text-slate-400 hover:text-indigo-600 flex items-center gap-1"><ChevronLeft size={14}/> Kembali ke List Tim</button>
@@ -1370,37 +1333,69 @@ export default function App() {
       </Modal>
 
       {/* --- EDIT PROFILE MODAL --- */}
-      <Modal isOpen={isEditProfileOpen} onClose={() => setIsEditProfileOpen(false)} title="Edit Profil">
-        <div className="space-y-4">
-           <div>
-               <label className="block text-xs font-bold text-slate-500 mb-1">Nama Lengkap</label>
-               <input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:border-indigo-500" value={editProfileData.displayName} onChange={e => setEditProfileData({...editProfileData, displayName: e.target.value})} />
-               <p className="text-[10px] text-slate-400 mt-1">Kesempatan ganti nama tersisa: <span className="font-bold text-indigo-500">{2 - (userData?.nameChangeCount || 0)}x</span></p>
-           </div>
-           <div><label className="block text-xs font-bold text-slate-500 mb-1">Bio Singkat</label><textarea className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:border-indigo-500 h-24 resize-none" value={editProfileData.bio} onChange={e => setEditProfileData({...editProfileData, bio: e.target.value})} /></div>
-           
-           {/* READ ONLY FIELDS */}
-           <div className="grid grid-cols-2 gap-4">
-               <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Sekolah</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={user?.school || '-'} /></div>
-               <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Kota</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={user?.city || '-'} /></div>
-           </div>
+     <Modal isOpen={isEditProfileOpen} onClose={() => setIsEditProfileOpen(false)} title="Edit Profil">
+  <div className="space-y-4">
+     <div>
+         <label className="block text-xs font-bold text-slate-500 mb-1">Nama Lengkap</label>
+         <input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:border-indigo-500" value={editProfileData.displayName} onChange={e => setEditProfileData({...editProfileData, displayName: e.target.value})} />
+         <p className="text-[10px] text-slate-400 mt-1">Kesempatan ganti nama tersisa: <span className="font-bold text-indigo-500">{2 - (userData?.nameChangeCount || 0)}x</span></p>
+     </div>
+     <div><label className="block text-xs font-bold text-slate-500 mb-1">Bio Singkat</label><textarea className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:border-indigo-500 h-24 resize-none" value={editProfileData.bio} onChange={e => setEditProfileData({...editProfileData, bio: e.target.value})} /></div>
+     
+     {/* FIX: userData bukan user */}
+     <div className="grid grid-cols-2 gap-4">
+         <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Sekolah</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={userData?.school || '-'} /></div>
+         <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Kota</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={userData?.city || '-'} /></div>
+     </div>
 
-           <div>
-               <label className="block text-xs font-bold text-slate-500 mb-1">Upload Foto (Auto-Resize)</label>
-               <button onClick={() => { 
-                   // Simulate file upload
-                   const dummyPhoto = `https://api.dicebear.com/7.x/avataaars/svg?seed=${Date.now()}`;
-                   setEditProfileData({...editProfileData, photoURL: dummyPhoto});
-                   showToast("Foto berhasil diupload (Simulasi)");
-               }} className="w-full p-4 bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 flex flex-col items-center justify-center gap-2 hover:bg-slate-100 transition-colors">
-                   <Upload size={24}/>
-                   <span>Klik untuk ganti foto dari Galeri</span>
-               </button>
-               {editProfileData.photoURL !== userData?.photoURL && <div className="text-[10px] text-emerald-500 font-bold mt-2 text-center">Foto baru siap disimpan!</div>}
-           </div>
-           <button onClick={handleUpdateProfile} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold transition-all shadow-lg flex items-center justify-center gap-2"><Save size={18}/> Simpan Profil</button>
-        </div>
-      </Modal>
+     {/* FIX: Real Firebase Storage Upload */}
+     <div>
+         <label className="block text-xs font-bold text-slate-500 mb-1">Upload Foto Profil</label>
+         <input 
+             type="file" 
+             id="photo-upload"
+             accept="image/*"
+             className="hidden"
+             onChange={async (e) => {
+                 const file = e.target.files[0];
+                 if (!file) return;
+                 
+                 if (file.size > 2 * 1024 * 1024) {
+                     return showToast("Ukuran foto maksimal 2MB!", "error");
+                 }
+                 
+                 try {
+                     showToast("Mengupload foto...");
+                     const storageRef = ref(storage, `profile_photos/${user.uid}_${Date.now()}.jpg`);
+                     await uploadBytes(storageRef, file);
+                     const photoURL = await getDownloadURL(storageRef);
+                     setEditProfileData({...editProfileData, photoURL});
+                     showToast("Foto berhasil diupload! ✅");
+                 } catch (err) {
+                     console.error("Upload error:", err);
+                     showToast("Gagal upload foto: " + err.message, "error");
+                 }
+             }}
+         />
+         <button 
+             type="button"
+             onClick={() => document.getElementById('photo-upload').click()} 
+             className="w-full p-4 bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 flex flex-col items-center justify-center gap-2 hover:bg-slate-100 transition-colors cursor-pointer"
+         >
+             <Upload size={24}/>
+             <span className="text-sm font-medium">Klik untuk pilih foto dari Galeri</span>
+             <span className="text-[10px] text-slate-400">Maksimal 2MB (JPG/PNG)</span>
+         </button>
+         {editProfileData.photoURL !== userData?.photoURL && (
+             <div className="mt-2 flex items-center justify-center gap-2 text-emerald-500">
+                 <img src={editProfileData.photoURL} className="w-10 h-10 rounded-full border-2 border-emerald-200"/>
+                 <span className="text-xs font-bold">Foto baru siap disimpan!</span>
+             </div>
+         )}
+     </div>
+     <button onClick={handleUpdateProfile} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold transition-all shadow-lg flex items-center justify-center gap-2"><Save size={18}/> Simpan Profil</button>
+  </div>
+</Modal>
 
       {/* --- MODAL APPROVAL USER --- */}
       {/* Ensure this modal is rendered at root level of return */}
