@@ -26,8 +26,6 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
    1. KONFIGURASI API (PRODUCTION)
    ======================================================================== */
 
-// --- FIREBASE INIT ---
-// NOTA: Pastikan variable ini diisi di Vercel > Settings > Environment Variables
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -37,7 +35,7 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
-// Initialize Firebase only if config is present (prevent crash in preview)
+// Initialize Firebase with Error Handling
 let app, auth, db, googleProvider;
 try {
     app = initializeApp(firebaseConfig);
@@ -45,14 +43,12 @@ try {
     db = getFirestore(app);
     googleProvider = new GoogleAuthProvider();
 } catch (error) {
-    console.warn("Firebase not initialized. Check .env variables.");
+    console.error("Firebase Init Error:", error);
 }
 
-// --- GEMINI INIT ---
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
 
-// --- ONESIGNAL INIT ---
 const ONESIGNAL_APP_ID = import.meta.env.VITE_ONESIGNAL_APP_ID;
 const ONESIGNAL_API_KEY = import.meta.env.VITE_ONESIGNAL_REST_API_KEY;
 
@@ -116,7 +112,6 @@ const ALL_TASK_IDS = WORKFLOW_STEPS.flatMap(step => step.tasks.map(t => t.id));
    3. API FUNCTIONS
    ======================================================================== */
 
-// --- ONE SIGNAL ---
 const sendOneSignalNotification = async (targetRole, message, teamName) => {
   if (!ONESIGNAL_APP_ID || !ONESIGNAL_API_KEY) {
     console.warn("OneSignal Config Missing");
@@ -135,7 +130,7 @@ const sendOneSignalNotification = async (targetRole, message, teamName) => {
     },
     body: JSON.stringify({
       app_id: ONESIGNAL_APP_ID,
-      included_segments: ["All"], // Di production, gunakan external_user_id
+      included_segments: ["All"],
       contents: { en: content },
       headings: { en: heading }
     })
@@ -149,7 +144,6 @@ const sendOneSignalNotification = async (targetRole, message, teamName) => {
   }
 };
 
-// --- GEMINI AI ---
 const generateAIScript = async (prompt) => {
   if (!genAI) return "Error: API Key Gemini Missing";
   try {
@@ -159,7 +153,7 @@ const generateAIScript = async (prompt) => {
     return response.text();
   } catch (error) {
     console.error("Gemini Error:", error);
-    return "Gagal generate script. Coba lagi.";
+    return "Gagal generate script. Pastikan API Key valid.";
   }
 };
 
@@ -181,7 +175,7 @@ const Modal = ({ isOpen, onClose, title, children }) => {
       <div className="bg-white rounded-[2rem] w-full max-w-md p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-4 sticky top-0 bg-white z-10 py-2 border-b border-slate-100">
           <h3 className="font-bold text-lg text-slate-800">{title}</h3>
-          <button type="button" onClick={onClose} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors"><X size={18}/></button>
+          <button onClick={onClose} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors"><X size={18}/></button>
         </div>
         {children}
       </div>
@@ -227,22 +221,10 @@ const BotEvaluation = ({ project }) => {
 
 const WeeklyBotReport = ({ projects }) => {
     const report = useMemo(() => {
-        const now = new Date();
-        const currentDay = now.getDay(); 
-        const diffToMonday = currentDay === 0 ? 6 : currentDay - 1; 
-        const startOfWeek = new Date(now);
-        startOfWeek.setHours(0, 0, 0, 0);
-        startOfWeek.setDate(now.getDate() - diffToMonday);
+        const now = new Date(); const currentDay = now.getDay(); const diffToMonday = currentDay === 0 ? 6 : currentDay - 1; 
+        const startOfWeek = new Date(now); startOfWeek.setHours(0, 0, 0, 0); startOfWeek.setDate(now.getDate() - diffToMonday);
         let completed = 0; let late = 0; let onTime = 0;
-        projects.forEach(p => {
-            if (p.status === 'Completed' && p.completedAt) {
-                const completedDate = new Date(p.completedAt);
-                if (completedDate >= startOfWeek) {
-                    completed++;
-                    if (p.deadline) { const deadline = new Date(p.deadline); if (completedDate > deadline) late++; else onTime++; } else { onTime++; }
-                }
-            }
-        });
+        projects.forEach(p => { if (p.status === 'Completed' && p.completedAt) { const completedDate = new Date(p.completedAt); if (completedDate >= startOfWeek) { completed++; if (p.deadline) { const deadline = new Date(p.deadline); if (completedDate > deadline) late++; else onTime++; } else { onTime++; } } } });
         return { completed, late, onTime };
     }, [projects]);
     const getMessage = () => { if (report.completed === 0) return "Minggu ini belum ada project selesai. Ayo semangat tim!"; if (report.late > 0) return `Minggu ini produktif, namun ada ${report.late} project yang melebihi deadline.`; return `Performa Luar Biasa! ${report.completed} Project selesai tepat waktu minggu ini.`; };
@@ -257,23 +239,33 @@ const WeeklyBotReport = ({ projects }) => {
     );
 };
 
+const RoboLogo = ({ size = 60 }) => (
+  <svg width={size} height={size} viewBox="0 0 100 100" className="overflow-visible drop-shadow-xl">
+    <path d="M50 20 L50 35" stroke="#4f46e5" strokeWidth="4" strokeLinecap="round" />
+    <circle cx="50" cy="15" r="5" fill="#f43f5e" className="animate-pulse" />
+    <rect x="25" y="35" width="50" height="40" rx="10" fill="white" stroke="#4f46e5" strokeWidth="3" />
+    <rect x="30" y="40" width="40" height="30" rx="6" fill="#e0e7ff" />
+    <circle cx="40" cy="55" r="4" fill="#1e1b4b" />
+    <circle cx="60" cy="55" r="4" fill="#1e1b4b" />
+  </svg>
+);
+
 /* ========================================================================
    MAIN APPLICATION
    ======================================================================== */
 
 export default function App() {
-  // State
-  const [currentUser, setCurrentUser] = useState(null);
+  const [user, setUser] = useState(null);
   const [userData, setUserData] = useState(null);
   const [view, setView] = useState('landing'); 
   
-  // Realtime Data Containers
+  // Realtime Data
   const [projects, setProjects] = useState([]);
   const [news, setNews] = useState([]);
   const [assets, setAssets] = useState([]);
   const [usersList, setUsersList] = useState([]);
   const [pendingUsers, setPendingUsers] = useState([]);
-
+  
   // Content States
   const [weeklyContent, setWeeklyContent] = useState({ title: "Belum ada highlight", image: "" });
   const [siteLogo, setSiteLogo] = useState("https://lh3.googleusercontent.com/d/1uJHar8EYXpRnL8uaPvhePEHWG-BasH9m");
@@ -321,7 +313,7 @@ export default function App() {
   useEffect(() => {
     if (!auth) return;
     const unsubAuth = onAuthStateChanged(auth, async (u) => {
-      setCurrentUser(u);
+      setUser(u);
       if (u) {
         const docRef = doc(db, 'users', u.uid);
         const docSnap = await getDoc(docRef);
@@ -336,7 +328,9 @@ export default function App() {
              setView('dashboard');
           }
         } else {
+          // If first time login
           if(SUPER_ADMIN_EMAILS.includes(u.email)) {
+             // If Super Admin
              const newAdmin = {
                 email: u.email, displayName: u.displayName, photoURL: u.photoURL,
                 role: 'super_admin', isProfileComplete: true, nameChangeCount: 0, uid: u.uid
@@ -345,6 +339,8 @@ export default function App() {
              setUserData(newAdmin);
              setView('dashboard');
           } else {
+             // Check if exists in pending users via email query
+             // Note: In real production we should use UID, but during invite flow email is easier
              setUserData(null);
              setView('landing');
           }
@@ -373,16 +369,27 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if ((userData?.role === 'super_admin' || userData?.role === 'supervisor') && db) {
-      const unsubUsers = onSnapshot(collection(db, 'users'), (s) => setUsersList(s.docs.map(d => ({ ...d.data(), uid: d.id }))));
-      const unsubPending = onSnapshot(collection(db, 'pending_users'), (s) => setPendingUsers(s.docs.map(d => ({ ...d.data(), id: d.id }))));
-      return () => { unsubUsers(); unsubPending(); };
-    } else if (db) {
-        const unsubPublicUsers = onSnapshot(query(collection(db, 'users'), orderBy('displayName')), (s) => setUsersList(s.docs.map(d => ({ ...d.data(), uid: d.id }))));
-        return () => unsubPublicUsers();
+    if (!db) return;
+    
+    // Always fetch public profile users for spotlight
+    const unsubPublicUsers = onSnapshot(query(collection(db, 'users'), orderBy('displayName')), (s) => {
+        const users = s.docs.map(d => ({ ...d.data(), uid: d.id }));
+        // For admin, we use the same list for user management table
+        setUsersList(users);
+    });
+
+    // Only fetch pending users if admin
+    let unsubPending = () => {};
+    if (userData?.role === 'super_admin' || userData?.role === 'supervisor') {
+      unsubPending = onSnapshot(collection(db, 'pending_users'), (s) => {
+        setPendingUsers(s.docs.map(d => ({ ...d.data(), id: d.id })));
+      });
     }
+
+    return () => { unsubPublicUsers(); unsubPending(); };
   }, [userData?.role]);
 
+  // Spotlight Loop
   useEffect(() => {
      if(view === 'landing' && usersList.length > 0) {
          const i = setInterval(() => setSpotlightIndex(p => (p + 1) % usersList.length), 10000);
@@ -400,43 +407,94 @@ export default function App() {
   const requestConfirm = (title, message, action, type='danger') => { setConfirmModal({ isOpen: true, title, message, action, type }); };
   const executeConfirmAction = () => { if (confirmModal.action) confirmModal.action(); setConfirmModal({ ...confirmModal, isOpen: false }); };
 
-  // 1. AUTH
+  // 1. AUTH & USER MGMT
   const handleGoogleLogin = async () => {
     setLoadingLogin(true); setShowPendingAlert(false);
     try {
-      const res = await signInWithPopup(auth, googleProvider);
-      const email = res.user.email;
-      const uid = res.user.uid;
+        const result = await signInWithPopup(auth, googleProvider);
+        const email = result.user.email;
+        const uid = result.user.uid;
 
-      const userSnap = await getDoc(doc(db, 'users', uid));
-      if (userSnap.exists()) {
-          // OK
-      } else {
-          if (SUPER_ADMIN_EMAILS.includes(email)) {
-               await setDoc(doc(db, 'users', uid), { email, displayName: res.user.displayName, photoURL: res.user.photoURL, role: 'super_admin', isProfileComplete: true, nameChangeCount: 0, uid });
-               showToast("Welcome Super Admin!");
-          } else {
-               const pendingQ = query(collection(db, 'pending_users'), where('email', '==', email)); 
-               // Check if exists first in real scenario, here just add
-               await addDoc(collection(db, 'pending_users'), { email, displayName: res.user.displayName, photoURL: res.user.photoURL, date: new Date().toLocaleDateString(), uid });
-               await signOut(auth);
-               setShowPendingAlert(true);
-          }
-      }
+        // Check user existence
+        const userDoc = await getDoc(doc(db, 'users', uid));
+        
+        if (userDoc.exists()) {
+             // Listener handles
+        } else if (SUPER_ADMIN_EMAILS.includes(email)) {
+             await setDoc(doc(db, 'users', uid), {
+                 email, displayName: result.user.displayName, photoURL: result.user.photoURL, 
+                 role: 'super_admin', isProfileComplete: true, nameChangeCount: 0, uid
+             });
+             showToast("Welcome Super Admin!");
+        } else {
+             // Check if pending exists to avoid dups
+             const q = query(collection(db, 'pending_users'), where('email', '==', email));
+             // In simple mode, just add
+             await addDoc(collection(db, 'pending_users'), {
+                 email, displayName: result.user.displayName, photoURL: result.user.photoURL, 
+                 date: new Date().toLocaleDateString(), uid
+             });
+             await signOut(auth);
+             setShowPendingAlert(true);
+        }
     } catch (err) {
-       console.error(err);
-       showToast("Login Gagal", "error");
+        // Detailed error for debugging
+        showToast("Login Error: " + err.message, "error");
     } finally {
-       setLoadingLogin(false);
+        setLoadingLogin(false);
     }
   };
 
   const handleLogout = async () => { await signOut(auth); setView('landing'); setShowMobileMenu(false); };
 
+  const handleConfirmApproval = async () => {
+      if(!selectedPendingUser) return;
+      try {
+          const newUser = {
+              uid: selectedPendingUser.uid, // This UID comes from Google Auth result stored in pending
+              email: selectedPendingUser.email,
+              displayName: selectedPendingUser.displayName,
+              photoURL: selectedPendingUser.photoURL,
+              role: approvalForm.role,
+              teamId: approvalForm.role === 'creator' ? approvalForm.teamId : (approvalForm.role === 'tim_khusus' ? 'team-5' : null),
+              isProfileComplete: false,
+              nameChangeCount: 0
+          };
+          
+          if (!newUser.uid) {
+             showToast("Error: User UID Missing", "error");
+             return;
+          }
+
+          // Move from pending to users
+          await setDoc(doc(db, 'users', newUser.uid), newUser);
+          await deleteDoc(doc(db, 'pending_users', selectedPendingUser.id)); // Delete using Firestore Doc ID
+          
+          setIsApprovalModalOpen(false); setSelectedPendingUser(null);
+          showToast("User Disetujui!");
+      } catch (e) {
+          console.error(e);
+          showToast("Gagal Approve: " + e.message, "error");
+      }
+  };
+
+  const handleRejectUser = (user) => {
+      requestConfirm("Tolak?", "Hapus user.", async () => {
+          await deleteDoc(doc(db, 'pending_users', user.id));
+          showToast("Ditolak.");
+      });
+  };
+
   // 2. PROFILE
   const handleProfileSubmit = async () => {
       try {
-          await updateDoc(doc(db, 'users', currentUser.uid), { displayName: profileForm.username, school: profileForm.school, city: profileForm.city, isProfileComplete: true, bio: "Member Baru" });
+          await updateDoc(doc(db, 'users', user.uid), {
+              displayName: profileForm.username,
+              school: profileForm.school,
+              city: profileForm.city,
+              isProfileComplete: true,
+              bio: "Member Baru"
+          });
           sendOneSignalNotification('mobile_push', 'Kamu berhasil login Roboedu Studio');
           showToast(`Selamat datang, ${profileForm.username}`);
       } catch (e) { showToast("Gagal simpan profil", "error"); }
@@ -449,20 +507,34 @@ export default function App() {
               if (newCount >= 2) return showToast("Batas ganti nama habis!", "error");
               newCount++;
           }
-          await updateDoc(doc(db, 'users', currentUser.uid), { displayName: editProfileData.displayName, bio: editProfileData.bio, photoURL: editProfileData.photoURL, nameChangeCount: newCount });
+          await updateDoc(doc(db, 'users', user.uid), {
+              displayName: editProfileData.displayName,
+              bio: editProfileData.bio,
+              photoURL: editProfileData.photoURL,
+              nameChangeCount: newCount
+          });
           setIsEditProfileOpen(false); showToast("Profil diupdate!");
       } catch(e) { showToast("Gagal update", "error"); }
   };
 
-  // 3. PROJECTS & TASKS
+  // 3. PROJECTS
   const handleAddProject = async () => {
       if(!newProjectForm.title) return showToast("Isi judul!", "error");
-      const p = { ...newProjectForm, status: 'In Progress', progress: 0, isApproved: false, previewImages: newProjectForm.isBigProject ? Array(20).fill(null) : [], completedTasks: [], equipment: '', script: '', feedback: '', finalLink: '', previewLink: '', createdAt: new Date().toLocaleDateString(), proposalStatus: 'None', teamId: (userData.role === 'supervisor' || userData.role === 'super_admin') ? newProjectForm.teamId : userData.teamId };
+      const p = {
+          ...newProjectForm,
+          status: 'In Progress', progress: 0, isApproved: false, 
+          previewImages: newProjectForm.isBigProject ? Array(20).fill(null) : [],
+          completedTasks: [], equipment: '', script: '', feedback: '', finalLink: '', previewLink: '',
+          createdAt: new Date().toLocaleDateString(), proposalStatus: 'None',
+          teamId: (userData.role === 'supervisor' || userData.role === 'super_admin') ? newProjectForm.teamId : userData.teamId
+      };
       await addDoc(collection(db, 'projects'), p);
       setIsAddProjectOpen(false); showToast("Project Dibuat!");
   };
 
-  const handleUpdateProjectFirestore = async (id, data) => { try { await updateDoc(doc(db, 'projects', id), data); } catch (e) { showToast("Gagal update project", "error"); } };
+  const handleUpdateProjectFirestore = async (id, data) => {
+      try { await updateDoc(doc(db, 'projects', id), data); } catch (e) { showToast("Gagal update project", "error"); }
+  };
 
   const handleDeleteProject = (id) => {
       requestConfirm("Hapus Project?", "Permanen.", async () => {
@@ -472,6 +544,7 @@ export default function App() {
       });
   };
 
+  // 4. WORKFLOW WRAPPERS
   const toggleTask = (projId, taskId) => {
       const proj = projects.find(p => p.id === projId); if (!proj) return;
       if (userData.role === 'supervisor' || userData.role === 'super_admin') return showToast("Admin view only", "error");
@@ -482,40 +555,97 @@ export default function App() {
       handleUpdateProjectFirestore(projId, { completedTasks: newTasks, progress: newProgress, status });
   };
 
-  const handleRemoveImage = (index) => { const newImages = [...activeProject.previewImages]; newImages[index] = null; handleUpdateProjectFirestore(activeProject.id, { previewImages: newImages }); };
-  const handleImageSubmit = () => { if (imageUploadState.slotIndex !== null) { const newImages = [...activeProject.previewImages]; newImages[imageUploadState.slotIndex] = imageUploadState.urlInput; handleUpdateProjectFirestore(activeProject.id, { previewImages: newImages }); setImageUploadState({ isOpen: false, slotIndex: null, urlInput: '' }); showToast("Foto tersimpan!"); } };
-  const handleSubmitPreview = (proj) => { if(!proj.previewLink) return showToast("Link kosong!", "error"); handleUpdateProjectFirestore(proj.id, { status: "Preview Submitted" }); sendOneSignalNotification('supervisor', `Review preview: "${proj.title}"`, TEAMS.find(t=>t.id===proj.teamId)?.name); };
-  const handleApprovalAction = (isApproved, feedback) => { if(!isApproved && !feedback) return showToast("Isi revisi!", "error"); handleUpdateProjectFirestore(activeProject.id, { isApproved, status: isApproved ? "Approved" : "Revision Needed", feedback: isApproved ? "" : feedback }); sendOneSignalNotification('creator', isApproved ? "Preview Approved" : "Revisi Baru", TEAMS.find(t=>t.id===activeProject.teamId)?.name); };
-  
-  const handleSubmitFinalRegular = (proj) => { if(!proj.finalLink) return showToast("Link kosong!", "error"); requestConfirm("Submit Final?", "Project ke Arsip.", () => { handleUpdateProjectFirestore(proj.id, { status: "Completed", progress: 100, completedAt: new Date().toISOString() }); sendOneSignalNotification('supervisor', `FINAL SUBMIT: ${proj.title}`, TEAMS.find(t=>t.id===proj.teamId)?.name); setView('dashboard'); }, 'neutral'); };
-
-  // 4. APPROVALS & TIM 5 LOGIC
-  const handleConfirmApproval = async () => {
-      if(!selectedPendingUser) return;
-      try {
-          const newUser = { uid: selectedPendingUser.uid, email: selectedPendingUser.email, displayName: selectedPendingUser.displayName, photoURL: selectedPendingUser.photoURL, role: approvalForm.role, teamId: approvalForm.role === 'creator' ? approvalForm.teamId : (approvalForm.role === 'tim_khusus' ? 'team-5' : null), isProfileComplete: false, nameChangeCount: 0 };
-          await setDoc(doc(db, 'users', selectedPendingUser.uid), newUser);
-          await deleteDoc(doc(db, 'pending_users', selectedPendingUser.id));
-          setIsApprovalModalOpen(false); setSelectedPendingUser(null); showToast("User Disetujui!");
-      } catch (e) { console.error(e); showToast("Gagal Approve", "error"); }
+  const handleRemoveImage = (index) => {
+      const newImages = [...activeProject.previewImages]; newImages[index] = null;
+      handleUpdateProjectFirestore(activeProject.id, { previewImages: newImages });
+  };
+  const handleImageSubmit = () => {
+    if (imageUploadState.slotIndex !== null) {
+        const newImages = [...activeProject.previewImages];
+        newImages[imageUploadState.slotIndex] = imageUploadState.urlInput;
+        handleUpdateProjectFirestore(activeProject.id, { previewImages: newImages });
+        setImageUploadState({ isOpen: false, slotIndex: null, urlInput: '' });
+        showToast("Foto tersimpan!");
+    }
+  };
+  const handleSubmitPreview = (proj) => {
+      if(!proj.previewLink) return showToast("Link kosong!", "error");
+      handleUpdateProjectFirestore(proj.id, { status: "Preview Submitted" });
+      sendOneSignalNotification('supervisor', `Review preview: "${proj.title}"`, TEAMS.find(t=>t.id===proj.teamId)?.name);
+  };
+  const handleApprovalAction = (isApproved, feedback) => {
+       if(!isApproved && !feedback) return showToast("Isi revisi!", "error");
+       handleUpdateProjectFirestore(activeProject.id, { isApproved, status: isApproved ? "Approved" : "Revision Needed", feedback: isApproved ? "" : feedback });
+       sendOneSignalNotification('creator', isApproved ? "Preview Approved" : "Revisi Baru", TEAMS.find(t=>t.id===activeProject.teamId)?.name);
+  };
+  const handleSubmitFinalRegular = (proj) => {
+      if(!proj.finalLink) return showToast("Link kosong!", "error");
+      requestConfirm("Submit Final?", "Project ke Arsip.", () => {
+          handleUpdateProjectFirestore(proj.id, { status: "Completed", progress: 100, completedAt: new Date().toISOString() });
+          sendOneSignalNotification('supervisor', `FINAL SUBMIT: ${proj.title}`, TEAMS.find(t=>t.id===proj.teamId)?.name);
+          setView('dashboard');
+      }, 'neutral');
+  };
+  // Tim 5 Logic
+  const handleProposeConcept = () => {
+    if (!activeProject.finalLink) return showToast("Isi link!", "error");
+    handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Pending' });
+    sendOneSignalNotification('supervisor', `Pengajuan Konsep: "${activeProject.title}"`, 'Tim 5');
+  };
+  const handleReviewProposal = (isAcc, feedback) => {
+      if(isAcc) {
+          handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Approved', feedback: '' });
+          sendOneSignalNotification('creator', `Konsep DISETUJUI.`, 'Tim 5');
+      } else {
+          if (!feedback) return showToast("Isi pesan!", "error");
+          handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Revision', feedback });
+          sendOneSignalNotification('creator', `REVISI Konsep: ${feedback}`, 'Tim 5');
+      }
+  };
+  const handleRePropose = () => {
+    handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Pending' });
+    sendOneSignalNotification('supervisor', `Pengajuan ULANG: "${activeProject.title}"`, 'Tim 5');
+  };
+  const handleSubmitFinalTim5 = () => {
+      requestConfirm("Yakin Submit?", "Project selesai.", () => {
+          handleUpdateProjectFirestore(activeProject.id, { status: "Completed", progress: 100, completedAt: new Date().toISOString() });
+          sendOneSignalNotification('supervisor', `FINAL SUBMIT Tim 5: ${activeProject.title}`, 'Tim 5');
+          setView('dashboard');
+      }, 'neutral');
   };
 
-  const handleRejectUser = (user) => { requestConfirm("Tolak?", "Hapus user.", async () => { await deleteDoc(doc(db, 'pending_users', user.id)); showToast("Ditolak."); }); };
-
-  const handleProposeConcept = () => { if (!activeProject.finalLink) return showToast("Isi link!", "error"); handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Pending' }); sendOneSignalNotification('supervisor', `Pengajuan: ${activeProject.title}`, 'Tim 5'); };
-  const handleReviewProposal = (isAcc, feedback) => { if(isAcc) { handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Approved', feedback: '' }); sendOneSignalNotification('creator', `Konsep DISETUJUI.`, 'Tim 5'); } else { if (!feedback) return showToast("Isi pesan!", "error"); handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Revision', feedback }); sendOneSignalNotification('creator', `REVISI: ${feedback}`, 'Tim 5'); } };
-  const handleRePropose = () => { handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Pending' }); sendOneSignalNotification('supervisor', `Pengajuan ULANG: "${activeProject.title}"`, 'Tim 5'); };
-  const handleSubmitFinalTim5 = () => { requestConfirm("Yakin Submit?", "Project selesai.", () => { handleUpdateProjectFirestore(activeProject.id, { status: "Completed", progress: 100, completedAt: new Date().toISOString() }); sendOneSignalNotification('supervisor', `FINAL SUBMIT Tim 5: ${activeProject.title}`, 'Tim 5'); setView('dashboard'); }, 'neutral'); };
-  
   // 5. ASSETS & NEWS & LOGO
-  const handleAddAsset = async () => { if(!newAssetForm.title) return; await addDoc(collection(db, 'assets'), { ...newAssetForm, date: new Date().toLocaleDateString() }); setIsAddAssetOpen(false); showToast("Aset Ditambah"); };
-  const handleDeleteAsset = (id) => { requestConfirm("Hapus Aset?", "Permanen.", async () => { await deleteDoc(doc(db, 'assets', id)); showToast("Aset Dihapus"); }); };
-  const handleSaveNews = async () => { if (newsForm.id) { await updateDoc(doc(db, 'news', newsForm.id), newsForm); } else { /* Add logic */ } setIsEditNewsOpen(false); showToast("Berita Update"); };
-  const handleSaveLogo = async () => { await setDoc(doc(db, 'site_config', 'main'), { logo: logoForm }, { merge: true }); setIsEditLogoOpen(false); showToast("Logo Update"); };
-  const handleSaveWeekly = async () => { await setDoc(doc(db, 'site_config', 'main'), { weekly: weeklyForm }, { merge: true }); setIsEditWeeklyOpen(false); showToast("Highlight Update"); };
-  const handleScript = async () => { setIsAILoading(true); const text = await generateAIScript(aiPrompt); setAiResult(text); setIsAILoading(false); };
-  
-  // Handlers for modal Open
+  const handleAddAsset = async () => {
+      if(!newAssetForm.title) return;
+      await addDoc(collection(db, 'assets'), { ...newAssetForm, date: new Date().toLocaleDateString() });
+      setIsAddAssetOpen(false); showToast("Aset Ditambah");
+  };
+  const handleDeleteAsset = (id) => {
+      requestConfirm("Hapus Aset?", "Permanen.", async () => {
+          await deleteDoc(doc(db, 'assets', id));
+          showToast("Aset Dihapus");
+      });
+  };
+  const handleSaveNews = async () => {
+      if (newsForm.id) { await updateDoc(doc(db, 'news', newsForm.id), newsForm); }
+      setIsEditNewsOpen(false); showToast("Berita Update");
+  };
+  const handleSaveLogo = async () => {
+      await setDoc(doc(db, 'site_config', 'main'), { logo: logoForm }, { merge: true });
+      setIsEditLogoOpen(false); showToast("Logo Update");
+  };
+  const handleSaveWeekly = async () => {
+      await setDoc(doc(db, 'site_config', 'main'), { weekly: weeklyForm }, { merge: true });
+      setIsEditWeeklyOpen(false); showToast("Highlight Update");
+  };
+  const handleScript = async () => {
+      setIsAILoading(true);
+      const text = await generateAIScript(aiPrompt);
+      setAiResult(text);
+      setIsAILoading(false);
+  };
+
+  // UI Handlers
   const handleOpenApproveModal = (u) => { setSelectedPendingUser(u); setApprovalForm({ role: 'creator', teamId: 'team-1' }); setIsApprovalModalOpen(true); };
   const handleEditNewsUI = (item) => { setNewsForm(item); setIsEditNewsOpen(true); };
 
@@ -558,30 +688,34 @@ export default function App() {
             
             <div className="hidden md:flex items-center gap-4">
                 <button onClick={() => setView('landing')} className={`text-sm font-bold transition-colors ${view === 'landing' ? 'text-indigo-600' : 'text-slate-500 hover:text-indigo-600'}`}>Beranda</button>
+                {/* ARCHIVE BUTTON REMOVED FROM NAVBAR - NOW IN DASHBOARD/HOME */}
 
-                {currentUser ? (
+                {user ? (
                     <div className="flex items-center gap-3 pl-4 border-l border-slate-200">
                         <div className="text-right">
                             <p className="text-xs font-bold text-slate-800">{userData?.displayName || 'User'}</p>
                             <p className="text-[10px] text-indigo-600 font-bold uppercase tracking-wider">{userData?.role?.replace('_', ' ')}</p>
                         </div>
+                        {/* Only show Settings if profile is complete */}
                         {userData?.isProfileComplete && (
                             <button onClick={() => { setEditProfileData(userData); setIsEditProfileOpen(true); }} className="relative group">
                                 <img src={userData?.photoURL} alt="User" className="w-10 h-10 rounded-full border-2 border-indigo-100 bg-slate-200 object-cover group-hover:border-indigo-300 transition-colors"/>
                                 <div className="absolute bottom-0 right-0 w-3 h-3 bg-white rounded-full border border-slate-200 flex items-center justify-center"><Settings size={8} className="text-slate-500"/></div>
                             </button>
                         )}
-                        {!userData?.isProfileComplete && <img src={currentUser.photoURL} className="w-10 h-10 rounded-full border-2 border-slate-200 bg-slate-100 object-cover"/>}
+                        {!userData?.isProfileComplete && <img src={user.photoURL} className="w-10 h-10 rounded-full border-2 border-slate-200 bg-slate-100 object-cover"/>}
+                        
                         {userData?.role === 'super_admin' && (
                            <button onClick={() => setView('user-management')} className="relative p-2 bg-indigo-50 rounded-full text-indigo-600 hover:bg-indigo-100 transition-colors" title="Manajemen User">
                               <UserPlus size={18}/>
                               {pendingUsers.length > 0 && <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-white animate-pulse"></span>}
                            </button>
                         )}
+                        
                         {view !== 'dashboard' && view !== 'team-list' && view !== 'user-management' && view !== 'profile-setup' && userData?.isProfileComplete && (
                             <button onClick={() => setView((userData.role === 'supervisor' || userData.role === 'super_admin') ? 'team-list' : 'dashboard')} className="bg-indigo-600 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg hover:bg-indigo-700 transition-all flex items-center gap-2">Dashboard <ArrowRight size={14}/></button>
                         )}
-                        <button onClick={() => signOut(auth)} className="p-2 bg-slate-100 rounded-full text-red-400 hover:bg-red-50 hover:text-red-500 transition-colors"><LogOut size={16}/></button>
+                        <button onClick={handleLogout} className="p-2 bg-slate-100 rounded-full text-red-400 hover:bg-red-50 hover:text-red-500 transition-colors"><LogOut size={16}/></button>
                     </div>
                 ) : (
                     <button onClick={() => setView('login')} className="bg-slate-900 text-white px-6 py-2.5 rounded-full text-sm font-bold hover:bg-slate-800 hover:scale-105 transition-all shadow-xl flex items-center gap-2">Masuk</button>
@@ -596,7 +730,7 @@ export default function App() {
       {/* MOBILE MENU */}
       {showMobileMenu && (
         <div className="fixed inset-0 z-40 bg-white/95 backdrop-blur-md pt-24 px-6 animate-[slideDown_0.3s_ease-out] md:hidden flex flex-col gap-4">
-            {currentUser ? (
+            {user ? (
                 <>
                     <div className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100" onClick={() => { 
                         if(userData?.isProfileComplete) {
@@ -623,7 +757,7 @@ export default function App() {
                     {view !== 'profile-setup' && userData?.isProfileComplete && (
                         <button onClick={() => { setView((userData.role === 'supervisor' || userData.role === 'super_admin') ? 'team-list' : 'dashboard'); setShowMobileMenu(false); }} className="p-4 rounded-xl font-bold text-slate-600 hover:bg-slate-50 text-left border border-transparent hover:border-slate-100 transition-all">Dashboard</button>
                     )}
-                    <button onClick={() => signOut(auth)} className="p-4 rounded-xl font-bold text-red-500 hover:bg-red-50 text-left flex items-center gap-2 border border-transparent hover:border-red-100 transition-all"><LogOut size={18}/> Keluar</button>
+                    <button onClick={handleLogout} className="p-4 rounded-xl font-bold text-red-500 hover:bg-red-50 text-left flex items-center gap-2 border border-transparent hover:border-red-100 transition-all"><LogOut size={18}/> Keluar</button>
                 </>
             ) : (
                 <div className="space-y-4">
@@ -634,10 +768,10 @@ export default function App() {
         </div>
       )}
 
-      {/* --- CONTENT AREA --- */}
       <div className="flex-1 p-4 md:p-8 pb-32 relative z-10 w-full min-h-screen">
         <div className="max-w-7xl mx-auto w-full">
 
+            {/* VIEW: PROFILE SETUP (FIRST TIME) */}
             {view === 'profile-setup' && (
                 <div className="pt-20 flex justify-center animate-[slideUp_0.4s_ease-out]">
                     <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-lg border border-slate-100 relative overflow-hidden">
@@ -738,7 +872,7 @@ export default function App() {
                                </div>
                            </div>
                            <div className="flex justify-center gap-2 mt-8">
-                               {usersList.map((_, idx) => (
+                               {usersList.slice(0, 10).map((_, idx) => (
                                    <div key={idx} className={`h-1.5 rounded-full transition-all duration-500 ${idx === spotlightIndex ? 'w-8 bg-indigo-600' : 'w-2 bg-slate-200'}`}></div>
                                ))}
                            </div>
@@ -752,15 +886,13 @@ export default function App() {
             {view === 'login' && (
                 <div className="flex flex-col items-center justify-center pt-20 animate-[slideUp_0.4s_ease-out]">
                     <div className="w-full max-w-sm bg-white rounded-[2.5rem] shadow-2xl p-8 relative z-10 border border-slate-100">
-                        <div className="flex flex-col items-center justify-center mb-8 gap-4">
-                            <img src={siteLogo} className="h-16 w-auto object-contain"/>
-                            <h1 className="text-2xl font-black text-center text-slate-900 tracking-tight">RoboEdu<span className="text-indigo-600">.Studio</span></h1>
-                        </div>
+                        <div className="flex flex-col items-center justify-center mb-8 gap-4"><img src={siteLogo} className="h-16 w-auto object-contain"/><h1 className="text-2xl font-black text-center text-slate-900 tracking-tight">RoboEdu<span className="text-indigo-600">.Studio</span></h1></div>
                         <div className="space-y-4">
-                            <div className="text-center text-slate-400 text-xs font-bold mb-4">LOGIN GOOGLE</div>
+                            <div className="text-center text-slate-400 text-xs font-bold mb-4">LOGIN GOOGLE (SIMULASI)</div>
                             <button onClick={handleGoogleLogin} disabled={loadingLogin} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-200 hover:bg-indigo-700 hover:scale-[1.02] transition-all flex items-center justify-center gap-3">{loadingLogin ? <Loader2 className="animate-spin"/> : <Shield size={20}/>} Sign in with Google</button>
                         </div>
                     </div>
+                    <button onClick={() => setView('landing')} className="mt-8 flex items-center gap-2 text-slate-400 text-xs font-bold hover:text-indigo-600 transition-colors"><ChevronLeft size={14}/> Kembali ke Beranda</button>
                 </div>
             )}
             
@@ -778,7 +910,7 @@ export default function App() {
                                         <img src={u.photoURL} className="w-10 h-10 rounded-full bg-white"/>
                                         <div className="flex-1 min-w-0"><div className="font-bold text-slate-800 text-sm truncate">{u.displayName}</div><div className="text-xs text-slate-500 truncate">{u.email}</div></div>
                                         <div className="flex gap-2">
-                                            {/* FIX: Use arrow function to prevent immediate execution */}
+                                            {/* Explicit button types and handlers */}
                                             <button type="button" onClick={() => handleRejectUser(u)} className="p-2 bg-white text-red-500 rounded-xl hover:bg-red-50 border border-transparent hover:border-red-200 transition-colors"><X size={16}/></button>
                                             <button type="button" onClick={() => handleOpenApproveModal(u)} className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 shadow-md transition-colors"><CheckCircle2 size={16}/></button>
                                         </div>
@@ -841,6 +973,7 @@ export default function App() {
                 </div>
             )}
 
+            {/* Dashboard & Project Detail */}
             {view === 'dashboard' && (
                 <div className="pt-20 animate-[fadeIn_0.3s]">
                            {(userData?.role === 'supervisor' || userData?.role === 'super_admin') && activeTeamId && (
@@ -860,12 +993,20 @@ export default function App() {
                                             setIsAddProjectOpen(true); 
                                         }} className="bg-slate-900 text-white px-4 py-2 rounded-full font-bold text-xs shadow-lg flex items-center gap-2"><Plus size={14}/> Project Baru</button>
                                     )}
-                                    {/* ARCHIVE BUTTON IN DASHBOARD */}
-                                    <button onClick={() => setView('archive')} className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-full font-bold text-xs shadow-sm flex items-center gap-2 hover:bg-slate-50"><Archive size={14}/> Arsip Project</button>
+                                    {/* CREATOR ARCHIVE BUTTON IN DASHBOARD */}
+                                    {(userData?.role === 'creator' || userData?.role === 'tim_khusus') && (
+                                        <button onClick={() => setView('archive')} className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-full font-bold text-xs shadow-sm flex items-center gap-2 hover:bg-slate-50"><Archive size={14}/> Arsip Project</button>
+                                    )}
+                                    {(userData?.role === 'supervisor' || userData?.role === 'super_admin') && (
+                                        <button onClick={() => setView('archive')} className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-full font-bold text-xs shadow-sm flex items-center gap-2 hover:bg-slate-50"><Archive size={14}/> Arsip Project</button>
+                                    )}
                                </div>
                            </div>
                            
-                           <PerformanceChart data={getWeeklyAnalytics((userData?.role === 'supervisor' || userData?.role === 'super_admin') ? activeTeamId || 'all' : userData?.teamId)} title="Statistik Mingguan"/>
+                           <PerformanceChart 
+                                data={getWeeklyAnalytics((userData?.role === 'supervisor' || userData?.role === 'super_admin') ? activeTeamId || 'all' : userData?.teamId)} 
+                                title="Statistik Mingguan"
+                           />
 
                            <div className="grid md:grid-cols-2 gap-4 mt-6">
                                {projects.filter(p => p.status !== 'Completed' && (p.teamId === userData?.teamId || userData?.role === 'supervisor' || userData?.role === 'super_admin')).map(p => (
@@ -881,10 +1022,11 @@ export default function App() {
                     
             {view === 'project-detail' && activeProject && (
                 <div className="pt-20 animate-[fadeIn_0.3s]">
-                    {/* ... (Project Detail Logic - Simplified Rendering to save space, logic is in handlers above) ... */}
+                    {/* ... (Project Detail rendering logic) ... */}
                     <div className="max-w-5xl mx-auto">
                         <button onClick={() => setView('dashboard')} className="mb-6 flex items-center gap-2 text-xs font-bold text-slate-400 hover:text-indigo-600"><ChevronLeft size={14}/> Kembali</button>
                         <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100">
+                            {/* ... (Project Header) ... */}
                             <div className="flex justify-between items-start mb-6">
                                 <div>
                                     <div className="flex gap-2 mb-2">
@@ -901,11 +1043,23 @@ export default function App() {
                             {activeProject.isBigProject ? (
                                 <div className="space-y-6">
                                     <div className="bg-amber-50 p-8 rounded-[2.5rem] shadow-sm border border-amber-200 relative">
-                                        <div className="absolute top-8 right-8 text-right hidden md:block"><div className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">Deadline</div><div className="text-lg font-black text-amber-800 flex items-center justify-end gap-1"><Calendar size={16}/> {activeProject.deadline}</div></div>
-                                        {/* ... Big Project Fields ... */}
+                                        <div className="absolute top-8 right-8 text-right hidden md:block">
+                                            <div className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">Deadline</div>
+                                            <div className="text-lg font-black text-amber-800 flex items-center justify-end gap-1"><Calendar size={16}/> {activeProject.deadline}</div>
+                                        </div>
+
                                         <div className="grid md:grid-cols-2 gap-6 mb-8">
-                                            <div><label className="text-xs font-black text-amber-700 uppercase block mb-2 tracking-wider">Script & Naskah</label><div className="relative"><textarea disabled={userData?.role !== 'tim_khusus'} className="w-full bg-white p-4 rounded-2xl text-sm font-medium text-slate-700 border border-amber-200 h-60 outline-none focus:ring-4 focus:ring-amber-200/50 transition-all custom-scrollbar resize-none shadow-sm" value={activeProject.script} onChange={e=>handleUpdateProjectFirestore(activeProject.id, {script: e.target.value})} placeholder="Isi naskah detail disini..." />{userData?.role === 'tim_khusus' && <button onClick={() => setShowAIModal(true)} className="absolute bottom-4 right-4 p-2 bg-amber-500 text-white rounded-lg shadow hover:bg-amber-600 transition-transform hover:scale-110"><Wand2 size={16}/></button>}</div></div>
-                                            <div><label className="text-xs font-black text-amber-700 uppercase block mb-2 tracking-wider">List Alat & Equipment</label><textarea disabled={userData?.role !== 'tim_khusus'} className="w-full bg-white p-4 rounded-2xl text-sm font-medium text-slate-700 border border-amber-200 h-60 outline-none focus:ring-4 focus:ring-amber-200/50 transition-all custom-scrollbar resize-none shadow-sm" value={activeProject.equipment} onChange={e=>handleUpdateProjectFirestore(activeProject.id, {equipment: e.target.value})} placeholder="List kamera, lighting, audio..." /></div>
+                                            <div>
+                                                <label className="text-xs font-black text-amber-700 uppercase block mb-2 tracking-wider">Script & Naskah</label>
+                                                <div className="relative">
+                                                    <textarea disabled={userData?.role !== 'tim_khusus'} className="w-full bg-white p-4 rounded-2xl text-sm font-medium text-slate-700 border border-amber-200 h-60 outline-none focus:ring-4 focus:ring-amber-200/50 transition-all custom-scrollbar resize-none shadow-sm" value={activeProject.script} onChange={e=>handleUpdateProjectFirestore(activeProject.id, {script: e.target.value})} placeholder="Isi naskah detail disini..." />
+                                                    {userData?.role === 'tim_khusus' && <button onClick={() => setShowAIModal(true)} className="absolute bottom-4 right-4 p-2 bg-amber-500 text-white rounded-lg shadow hover:bg-amber-600 transition-transform hover:scale-110"><Wand2 size={16}/></button>}
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className="text-xs font-black text-amber-700 uppercase block mb-2 tracking-wider">List Alat & Equipment</label>
+                                                <textarea disabled={userData?.role !== 'tim_khusus'} className="w-full bg-white p-4 rounded-2xl text-sm font-medium text-slate-700 border border-amber-200 h-60 outline-none focus:ring-4 focus:ring-amber-200/50 transition-all custom-scrollbar resize-none shadow-sm" value={activeProject.equipment} onChange={e=>handleUpdateProjectFirestore(activeProject.id, {equipment: e.target.value})} placeholder="List kamera, lighting, audio..." />
+                                            </div>
                                         </div>
                                         <div className="mb-8">
                                             <div className="flex justify-between items-end mb-4"><label className="text-xs font-black text-amber-700 uppercase tracking-wider flex items-center gap-2"><ImageIcon size={16}/> Preview Komposisi (Max 20)</label><span className="text-[10px] text-amber-600 font-bold">{activeProject.previewImages.filter(Boolean).length} / 20 Terisi</span></div>
@@ -917,18 +1071,72 @@ export default function App() {
                                                 ))}
                                             </div>
                                         </div>
+                                        
                                         <div className="bg-white p-6 rounded-2xl border border-amber-100">
                                             <label className="text-xs font-black text-amber-700 uppercase block mb-3 tracking-wider flex items-center gap-2"><CheckCircle2 size={16}/> Final Submission (G-Drive)</label>
+                                            
+                                            {activeProject.proposalStatus === 'Pending' && (
+                                                <div className="mb-4 bg-blue-50 p-4 rounded-xl border border-blue-100 text-center text-blue-600 text-sm font-bold flex items-center justify-center gap-2">
+                                                    <Loader2 className="animate-spin" size={16}/> Konsep Sedang Direview Admin
+                                                </div>
+                                            )}
+                                            {activeProject.proposalStatus === 'Revision' && (
+                                                <div className="mb-4 bg-red-50 p-4 rounded-xl border border-red-100 text-left">
+                                                    <div className="text-xs font-bold text-red-500 uppercase mb-1">Catatan Revisi Admin:</div>
+                                                    <p className="text-sm text-red-700 font-medium">{activeProject.feedback}</p>
+                                                </div>
+                                            )}
+                                            {activeProject.proposalStatus === 'Approved' && (
+                                                <div className="mb-4 bg-emerald-50 p-4 rounded-xl border border-emerald-100 text-center text-emerald-600 text-sm font-bold flex items-center justify-center gap-2">
+                                                    <Check size={16}/> Konsep Telah Disetujui. Silakan Submit Final.
+                                                </div>
+                                            )}
+
                                             <div className="flex gap-3 flex-col md:flex-row">
-                                                <input type="text" className="flex-1 p-3 text-xs rounded-xl border border-amber-200 outline-none focus:ring-2 focus:ring-amber-300" placeholder="Paste Link Final GDrive..." value={activeProject.finalLink || ''} onChange={e => handleUpdateProjectFirestore(activeProject.id, { finalLink: e.target.value })} disabled={activeProject.status === 'Completed' || (userData?.role === 'tim_khusus' && activeProject.proposalStatus === 'Pending')}/>
+                                                <input 
+                                                    type="text" 
+                                                    className="flex-1 p-3 text-xs rounded-xl border border-amber-200 outline-none focus:ring-2 focus:ring-amber-300" 
+                                                    placeholder="Paste Link Final GDrive..." 
+                                                    value={activeProject.finalLink || ''} 
+                                                    onChange={e => handleUpdateProjectFirestore(activeProject.id, { finalLink: e.target.value })} 
+                                                    disabled={activeProject.status === 'Completed' || (userData?.role === 'tim_khusus' && activeProject.proposalStatus === 'Pending')}
+                                                />
+
                                                 {userData?.role === 'tim_khusus' && activeProject.status !== 'Completed' && (
                                                     <>
-                                                        {(activeProject.proposalStatus === 'None' || activeProject.proposalStatus === 'Revision') && <button onClick={activeProject.proposalStatus === 'None' ? handleProposeConcept : handleRePropose} disabled={!activeProject.finalLink || activeProject.previewImages.filter(Boolean).length === 0} className="px-6 py-3 bg-blue-500 text-white rounded-xl text-xs font-bold shadow-lg hover:bg-blue-600 disabled:bg-slate-300 transition-all whitespace-nowrap">{activeProject.proposalStatus === 'Revision' ? "Ajukan Ulang" : "Ajukan Konsep"}</button>}
-                                                        {activeProject.proposalStatus === 'Approved' && <button onClick={() => handleSubmitFinalTim5()} className="px-6 py-3 bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-lg hover:bg-emerald-600 transition-all whitespace-nowrap">Submit Final</button>}
+                                                        {(activeProject.proposalStatus === 'None' || activeProject.proposalStatus === 'Revision') && (
+                                                            <button 
+                                                                onClick={activeProject.proposalStatus === 'None' ? handleProposeConcept : handleRePropose} 
+                                                                disabled={!activeProject.finalLink || activeProject.previewImages.filter(Boolean).length === 0} 
+                                                                className="px-6 py-3 bg-blue-500 text-white rounded-xl text-xs font-bold shadow-lg hover:bg-blue-600 disabled:bg-slate-300 transition-all whitespace-nowrap"
+                                                            >
+                                                                {activeProject.proposalStatus === 'Revision' ? "Ajukan Ulang" : "Ajukan Konsep"}
+                                                            </button>
+                                                        )}
+
+                                                        {activeProject.proposalStatus === 'Approved' && (
+                                                            <button 
+                                                                onClick={() => handleSubmitFinalTim5()} 
+                                                                className="px-6 py-3 bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-lg hover:bg-emerald-600 transition-all whitespace-nowrap"
+                                                            >
+                                                                Submit Final
+                                                            </button>
+                                                        )}
                                                     </>
                                                 )}
+
                                                 {(userData?.role === 'supervisor' || userData?.role === 'super_admin') && activeProject.proposalStatus === 'Pending' && (
-                                                    <div className="flex gap-2"><button onClick={() => handleReviewProposal(true)} className="px-4 py-3 bg-emerald-500 text-white rounded-xl text-xs font-bold shadow hover:bg-emerald-600">ACC Pengajuan</button><button onClick={() => { const fb = prompt("Masukkan pesan revisi:"); if(fb) handleReviewProposal(false, fb); }} className="px-4 py-3 bg-red-500 text-white rounded-xl text-xs font-bold shadow hover:bg-red-600">Revisi</button></div>
+                                                    <div className="flex gap-2">
+                                                        <button onClick={() => handleReviewProposal(true)} className="px-4 py-3 bg-emerald-500 text-white rounded-xl text-xs font-bold shadow hover:bg-emerald-600">ACC Pengajuan</button>
+                                                        <button onClick={() => {
+                                                            const fb = prompt("Masukkan pesan revisi:");
+                                                            if(fb) handleReviewProposal(false, fb);
+                                                        }} className="px-4 py-3 bg-red-500 text-white rounded-xl text-xs font-bold shadow hover:bg-red-600">Revisi</button>
+                                                    </div>
+                                                )}
+
+                                                {(activeProject.status === 'Completed' || ((userData?.role === 'supervisor' || userData?.role === 'super_admin') && activeProject.finalLink)) && (
+                                                    <a href={activeProject.finalLink} target="_blank" className="px-6 py-3 bg-amber-50 text-amber-600 border border-amber-200 rounded-xl font-bold text-xs text-center hover:bg-amber-100 whitespace-nowrap">Buka Link</a>
                                                 )}
                                             </div>
                                         </div>
@@ -951,9 +1159,13 @@ export default function App() {
                                                                     {!activeProject.isApproved && (
                                                                         <div className="flex flex-col gap-4 pt-4 border-t border-purple-100">
                                                                             <textarea className="w-full p-4 text-xs rounded-2xl border border-red-200 bg-white outline-none focus:ring-2 focus:ring-red-200 resize-none font-medium" rows={3} placeholder="Tulis catatan revisi disini (wajib diisi jika revisi)..." value={feedbackInput} onChange={e=>setFeedbackInput(e.target.value)}></textarea>
-                                                                            <div className="flex gap-3"><button onClick={() => handleApprovalAction(true)} className="flex-1 py-4 bg-emerald-500 text-white rounded-2xl text-sm font-bold shadow-lg hover:bg-emerald-600 transition-all hover:scale-105 flex items-center justify-center gap-2"><CheckCircle2 size={18}/> Approve Preview</button><button onClick={() => handleApprovalAction(false, feedbackInput)} className="flex-1 py-4 bg-red-500 text-white rounded-2xl text-sm font-bold shadow-lg hover:bg-red-600 transition-all hover:scale-105 flex items-center justify-center gap-2"><X size={18}/> Kirim Revisi</button></div>
+                                                                            <div className="flex gap-3">
+                                                                                <button onClick={() => handleApprovalAction(true)} className="flex-1 py-4 bg-emerald-500 text-white rounded-2xl text-sm font-bold shadow-lg hover:bg-emerald-600 transition-all hover:scale-105 flex items-center justify-center gap-2"><CheckCircle2 size={18}/> Approve Preview</button>
+                                                                                <button onClick={() => handleApprovalAction(false, feedbackInput)} className="flex-1 py-4 bg-red-500 text-white rounded-2xl text-sm font-bold shadow-lg hover:bg-red-600 transition-all hover:scale-105 flex items-center justify-center gap-2"><X size={18}/> Kirim Revisi</button>
+                                                                            </div>
                                                                         </div>
                                                                     )}
+                                                                    {activeProject.isApproved && <div className="text-center py-4 bg-emerald-100 text-emerald-700 rounded-2xl text-sm font-bold border border-emerald-200 flex items-center justify-center gap-2"><CheckCircle2 size={18}/> Preview Telah Disetujui</div>}
                                                                 </div>
                                                             ) : <div className="text-center py-4 text-xs text-purple-400 italic">Belum ada preview yang di-submit creator.</div>}
                                                         </div>
@@ -1026,20 +1238,27 @@ export default function App() {
                             return true;
                         }).map(p => (
                             <div key={p.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex flex-col gap-4 hover:shadow-md transition-all">
-                                <div><div className="text-[10px] text-slate-400 mb-1 font-bold">{p.createdAt}</div><h4 className="font-bold text-slate-700 text-lg leading-tight">{p.title}</h4></div>
+                                <div>
+                                    <div className="text-[10px] text-slate-400 mb-1 font-bold">{p.createdAt}</div>
+                                    <h4 className="font-bold text-slate-700 text-lg leading-tight">{p.title}</h4>
+                                </div>
                                 {p.isBigProject && <BotEvaluation project={p}/>}
+                                
                                 <div className="flex gap-2 mt-auto">
+                                    {/* LINK & DELETE ONLY FOR ADMIN OR IF LINK IS PUBLIC (Here restricted) */}
                                     {p.finalLink && (userData?.role === 'supervisor' || userData?.role === 'super_admin') ? (
                                         <a href={p.finalLink} target="_blank" className="flex-1 py-2 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center hover:bg-indigo-100 transition-colors font-bold text-xs"><LinkIcon size={14} className="mr-2"/> Drive</a>
                                     ) : (
                                         <div className="flex-1 py-2 bg-slate-50 text-slate-400 rounded-xl flex items-center justify-center font-bold text-xs cursor-not-allowed"><Lock size={12} className="mr-2"/> Protected</div>
                                     )}
+
                                     {(userData?.role === 'supervisor' || userData?.role === 'super_admin') && (
                                         <button onClick={(e) => { e.stopPropagation(); handleDeleteProject(p.id); }} className="p-2 bg-red-50 text-red-500 rounded-xl hover:bg-red-100 transition-colors"><Trash2 size={18}/></button>
                                     )}
                                 </div>
                             </div>
                         ))}
+                        {projects.filter(p => p.status === 'Completed').length === 0 && <div className="col-span-full text-center py-10 text-slate-400 font-medium">Belum ada project yang diarsipkan.</div>}
                     </div>
                 </div>
             )}
@@ -1098,9 +1317,7 @@ export default function App() {
       <Modal isOpen={imageUploadState.isOpen} onClose={() => setImageUploadState({ ...imageUploadState, isOpen: false })} title="Upload Preview (Link)">
           {/* ... (Existing Modal Content) ... */}
           <div className="space-y-4">
-              <div className="bg-slate-50 p-4 rounded-xl text-xs text-slate-500 leading-relaxed border border-slate-200">
-                  <p className="font-bold text-indigo-600 mb-1">Tips Bot GDrive:</p>Paste link Google Drive biasa, lalu klik tombol "Auto-Fix Link" agar gambar bisa muncul di preview.
-              </div>
+              <div className="bg-slate-50 p-4 rounded-xl text-xs text-slate-500 leading-relaxed border border-slate-200"><p className="font-bold text-indigo-600 mb-1">Tips Bot GDrive:</p>Paste link Google Drive biasa, lalu klik tombol "Auto-Fix Link" agar gambar bisa muncul di preview.</div>
               <input type="text" className="w-full p-4 bg-white rounded-2xl text-sm border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-200" placeholder="https://..." value={imageUploadState.urlInput} onChange={e => setImageUploadState({ ...imageUploadState, urlInput: e.target.value })}/>
               {imageUploadState.urlInput.includes('drive.google.com') && (<button onClick={() => setImageUploadState({ ...imageUploadState, urlInput: autoCorrectGDriveLink(imageUploadState.urlInput) })} className="w-full py-2 bg-amber-100 text-amber-700 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-amber-200 transition-colors"><Zap size={14}/> Auto-Fix Link (Bot)</button>)}
               <button onClick={handleImageSubmit} className="w-full py-3 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg hover:bg-indigo-700">Simpan Gambar</button>
@@ -1115,35 +1332,64 @@ export default function App() {
               <div className="flex gap-3"><button onClick={() => setConfirmModal({...confirmModal, isOpen: false})} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold">Batal</button><button onClick={executeConfirmAction} className={`flex-1 py-3 text-white rounded-xl font-bold ${confirmModal.type === 'danger' ? 'bg-red-500' : 'bg-blue-600'}`}>Ya, Lanjutkan</button></div>
           </div>
       </Modal>
-      
-      {/* Upload Asset Modal */}
+
+      {/* --- ADD PROJECT MODAL WITH DEADLINE --- */}
+      <Modal isOpen={isAddProjectOpen} onClose={() => setIsAddProjectOpen(false)} title="Project Baru">
+           <div className="space-y-4">
+               <div><label className="block text-xs font-bold text-slate-500 mb-1">Judul Project</label><input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none font-medium" placeholder="Judul Project..." value={newProjectForm.title} onChange={e => setNewProjectForm({...newProjectForm, title: e.target.value})} /></div>
+               {newProjectForm.isBigProject && (
+                   <div className="animate-[fadeIn_0.3s]">
+                       <label className="block text-xs font-bold text-slate-500 mb-1">Deadline Project</label>
+                       <input type="date" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none font-medium" value={newProjectForm.deadline} onChange={e => setNewProjectForm({...newProjectForm, deadline: e.target.value})} />
+                   </div>
+               )}
+               <button onClick={handleAddProject} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold">Buat Project</button>
+           </div>
+      </Modal>
+
+      {/* --- ADD ASSET MODAL (MISSING FIX) --- */}
       <Modal isOpen={isAddAssetOpen} onClose={() => setIsAddAssetOpen(false)} title="Upload Aset Baru">
          <div className="space-y-4">
-             <div><label className="block text-xs font-bold text-slate-500 mb-1">Nama File</label><input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none" placeholder="Contoh: Logo.png" value={newAssetForm.title} onChange={e=>setNewAssetForm({...newAssetForm, title: e.target.value})}/></div>
+             <div><label className="block text-xs font-bold text-slate-500 mb-1">Nama File</label><input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:bg-white focus:border-indigo-500 transition-all font-medium" placeholder="Contoh: Logo.png" value={newAssetForm.title} onChange={e=>setNewAssetForm({...newAssetForm, title: e.target.value})}/></div>
              <div className="flex gap-3">
                  <div className="flex-1"><label className="block text-xs font-bold text-slate-500 mb-1">Tipe File</label><select className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none flex-1 font-medium cursor-pointer" value={newAssetForm.type} onChange={e=>setNewAssetForm({...newAssetForm, type: e.target.value})}><option value="folder">Folder</option><option value="audio">Audio</option><option value="video">Video</option></select></div>
                  <div className="w-1/3"><label className="block text-xs font-bold text-slate-500 mb-1">Ukuran (MB)</label><input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none font-medium" placeholder="Size" value={newAssetForm.size} onChange={e=>setNewAssetForm({...newAssetForm, size: e.target.value})}/></div>
              </div>
-             <button onClick={handleAddAsset} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg">Simpan Aset</button>
+             <button onClick={handleAddAsset} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg mt-2 hover:bg-indigo-700 transition-all">Simpan Aset</button>
          </div>
       </Modal>
 
-      {/* AI Modal */}
-      <Modal isOpen={showAIModal} onClose={() => setShowAIModal(false)} title="AI Script Assistant">
-          <div className="space-y-4">
-              <div className="bg-indigo-50 p-4 rounded-2xl text-xs text-indigo-800 font-medium flex items-center gap-2 mb-2"><Sparkles size={14}/> AI akan membuat draft naskah berdasarkan ide Anda.</div>
-              <textarea className="w-full h-32 p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none resize-none focus:ring-2 focus:ring-indigo-200" placeholder="Contoh: Buat naskah video cinematic..." value={aiPrompt} onChange={e=>setAiPrompt(e.target.value)}/>
-              <div className={`transition-all duration-300 ${aiResult || isAILoading ? 'opacity-100 max-h-60' : 'opacity-0 max-h-0'} overflow-hidden`}><div className="bg-slate-900 text-slate-200 p-6 rounded-2xl text-xs whitespace-pre-line font-mono leading-relaxed border border-slate-700 shadow-inner custom-scrollbar overflow-y-auto max-h-60">{isAILoading ? <div className="flex items-center gap-2"><Loader2 className="animate-spin" size={14}/> Sedang berpikir...</div> : aiResult}</div></div>
-              <div className="flex gap-3 mt-2"><button disabled={isAILoading || !aiPrompt} onClick={handleScript} className="flex-1 py-4 bg-indigo-600 disabled:bg-slate-300 text-white rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg"><Wand2 size={18}/> {aiResult ? "Generate Ulang" : "Buat Naskah"}</button>{aiResult && !isAILoading && (<button onClick={() => { handleUpdateProjectFirestore(activeProject.id, { script: aiResult }); setShowAIModal(false); showToast("Naskah diterapkan!"); }} className="flex-1 py-4 bg-emerald-500 text-white rounded-2xl font-bold shadow-lg">Gunakan</button>)}</div>
-          </div>
-      </Modal>
-      
-      <Modal isOpen={isEditLogoOpen} onClose={() => setIsEditLogoOpen(false)} title="Edit Logo Sekolah">
-          <div className="space-y-4">
-              <input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none" value={logoForm} onChange={e => setLogoForm(e.target.value)} placeholder="Paste link logo..."/>
-              {logoForm.includes('drive.google.com') && <button onClick={() => setLogoForm(autoCorrectGDriveLink(logoForm))} className="w-full py-2 bg-amber-100 text-amber-700 rounded-xl text-xs font-bold flex items-center justify-center gap-2"><Zap size={14}/> Auto-Fix Link GDrive</button>}
-              <button onClick={handleSaveLogo} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold">Simpan Logo</button>
-          </div>
+      {/* --- EDIT PROFILE MODAL --- */}
+      <Modal isOpen={isEditProfileOpen} onClose={() => setIsEditProfileOpen(false)} title="Edit Profil">
+        <div className="space-y-4">
+           <div>
+               <label className="block text-xs font-bold text-slate-500 mb-1">Nama Lengkap</label>
+               <input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:border-indigo-500" value={editProfileData.displayName} onChange={e => setEditProfileData({...editProfileData, displayName: e.target.value})} />
+               <p className="text-[10px] text-slate-400 mt-1">Kesempatan ganti nama tersisa: <span className="font-bold text-indigo-500">{2 - (userData?.nameChangeCount || 0)}x</span></p>
+           </div>
+           <div><label className="block text-xs font-bold text-slate-500 mb-1">Bio Singkat</label><textarea className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:border-indigo-500 h-24 resize-none" value={editProfileData.bio} onChange={e => setEditProfileData({...editProfileData, bio: e.target.value})} /></div>
+           
+           {/* READ ONLY FIELDS */}
+           <div className="grid grid-cols-2 gap-4">
+               <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Sekolah</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={user?.school || '-'} /></div>
+               <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Kota</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={user?.city || '-'} /></div>
+           </div>
+
+           <div>
+               <label className="block text-xs font-bold text-slate-500 mb-1">Upload Foto (Auto-Resize)</label>
+               <button onClick={() => { 
+                   // Simulate file upload
+                   const dummyPhoto = `https://api.dicebear.com/7.x/avataaars/svg?seed=${Date.now()}`;
+                   setEditProfileData({...editProfileData, photoURL: dummyPhoto});
+                   showToast("Foto berhasil diupload (Simulasi)");
+               }} className="w-full p-4 bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 flex flex-col items-center justify-center gap-2 hover:bg-slate-100 transition-colors">
+                   <Upload size={24}/>
+                   <span>Klik untuk ganti foto dari Galeri</span>
+               </button>
+               {editProfileData.photoURL !== user?.photoURL && <div className="text-[10px] text-emerald-500 font-bold mt-2 text-center">Foto baru siap disimpan!</div>}
+           </div>
+           <button onClick={handleUpdateProfile} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold transition-all shadow-lg flex items-center justify-center gap-2"><Save size={18}/> Simpan Profil</button>
+        </div>
       </Modal>
 
       {/* --- MODAL APPROVAL USER --- */}
@@ -1168,28 +1414,13 @@ export default function App() {
           ) : (<div className="text-center py-10"><Loader2 className="animate-spin mx-auto text-slate-300"/></div>)}
       </Modal>
 
-      <Modal isOpen={isEditProfileOpen} onClose={() => setIsEditProfileOpen(false)} title="Edit Profil">
-        <div className="space-y-4">
-           <div>
-               <label className="block text-xs font-bold text-slate-500 mb-1">Nama Lengkap</label>
-               <input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:border-indigo-500" value={editProfileData.displayName} onChange={e => setEditProfileData({...editProfileData, displayName: e.target.value})} />
-               <p className="text-[10px] text-slate-400 mt-1">Kesempatan ganti nama tersisa: <span className="font-bold text-indigo-500">{2 - (userData?.nameChangeCount || 0)}x</span></p>
-           </div>
-           <div><label className="block text-xs font-bold text-slate-500 mb-1">Bio Singkat</label><textarea className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:border-indigo-500 h-24 resize-none" value={editProfileData.bio} onChange={e => setEditProfileData({...editProfileData, bio: e.target.value})} /></div>
-           <div className="grid grid-cols-2 gap-4">
-               <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Sekolah</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={userData?.school || '-'} /></div>
-               <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Kota</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={userData?.city || '-'} /></div>
-           </div>
-           <div><label className="block text-xs font-bold text-slate-500 mb-1">Upload Foto (Auto-Resize)</label><button onClick={() => { const dummyPhoto = `https://api.dicebear.com/7.x/avataaars/svg?seed=${Date.now()}`; setEditProfileData({...editProfileData, photoURL: dummyPhoto}); showToast("Foto berhasil diupload (Simulasi)"); }} className="w-full p-4 bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 flex flex-col items-center justify-center gap-2 hover:bg-slate-100 transition-colors"><Upload size={24}/><span>Klik untuk ganti foto dari Galeri</span></button></div>
-           <button onClick={handleUpdateProfile} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold">Simpan Profil</button>
-        </div>
-      </Modal>
-
+      {/* Other modals (Edit Weekly, News, Approval, etc.) remain standard as previous */}
+      {/* ... (Keeping previous modal implementations for brevity) ... */}
       <Modal isOpen={isEditWeeklyOpen} onClose={() => setIsEditWeeklyOpen(false)} title="Edit Weekly Highlight">
         <div className="space-y-4">
            <div><label className="block text-xs font-bold text-slate-500 mb-1">Judul Highlight</label><input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:border-indigo-500 transition-colors" value={weeklyForm.title} onChange={e => setWeeklyForm({...weeklyForm, title: e.target.value})} /></div>
            <div><label className="block text-xs font-bold text-slate-500 mb-1">URL Gambar (Unsplash)</label><input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:border-indigo-500 transition-colors" value={weeklyForm.image} onChange={e => setWeeklyForm({...weeklyForm, image: e.target.value})} /></div>
-           <button onClick={handleSaveWeekly} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold transition-all shadow-lg flex items-center justify-center gap-2"><Save size={18}/> Simpan Perubahan</button>
+           <button onClick={() => {setWeeklyContent(weeklyForm); setIsEditWeeklyOpen(false); showToast("Highlight berhasil diperbarui!");}} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold transition-all shadow-lg flex items-center justify-center gap-2"><Save size={18}/> Simpan Perubahan</button>
         </div>
       </Modal>
 
@@ -1202,12 +1433,22 @@ export default function App() {
         </div>
       </Modal>
 
+      <Modal isOpen={isEditLogoOpen} onClose={() => setIsEditLogoOpen(false)} title="Edit Logo Sekolah">
+          <div className="space-y-4">
+              <input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none" value={logoForm} onChange={e => setLogoForm(e.target.value)} placeholder="Paste link logo..."/>
+              {logoForm.includes('drive.google.com') && <button onClick={() => setLogoForm(autoCorrectGDriveLink(logoForm))} className="w-full py-2 bg-amber-100 text-amber-700 rounded-xl text-xs font-bold flex items-center justify-center gap-2"><Zap size={14}/> Auto-Fix Link GDrive</button>}
+              <button onClick={handleSaveLogo} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold">Simpan Logo</button>
+          </div>
+      </Modal>
+
+      {/* --- DETAIL BERITA MODAL --- */}
       <Modal isOpen={!!selectedNews} onClose={() => setSelectedNews(null)} title="Detail Berita">
         {selectedNews && (
             <div className="animate-[fadeIn_0.2s]">
                 <span className="bg-indigo-50 text-indigo-600 px-3 py-1 rounded-lg text-[10px] font-bold uppercase mb-4 inline-block">{selectedNews.category}</span>
                 <h2 className="text-2xl font-black text-slate-800 mb-4 leading-tight">{selectedNews.title}</h2>
                 <div className="text-sm text-slate-600 leading-relaxed bg-slate-50 p-6 rounded-[2rem] mb-4 border border-slate-100 font-medium whitespace-pre-line">{selectedNews.content}</div>
+                <div className="text-xs text-slate-400 font-bold text-right">Diposting: {selectedNews.date}</div>
             </div>
         )}
       </Modal>
