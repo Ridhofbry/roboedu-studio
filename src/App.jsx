@@ -1605,10 +1605,34 @@ export default function App() {
                                 <button type="button" onClick={() => setApprovalForm({ ...approvalForm, role: 'supervisor' })} className={`p-3 rounded-xl border text-left text-sm font-bold ${approvalForm.role === 'supervisor' ? 'bg-purple-50 border-purple-500 text-purple-700' : 'text-slate-600'}`}>Supervisor</button>
                             </div>
                         </div>
-                        <button type="button" onClick={handleConfirmApproval} className="w-full py-4 bg-emerald-500 text-white rounded-2xl font-bold shadow-lg">Setujui Akses</button>
-                    </div>
-                ) : (<div className="text-center py-10"><Loader2 className="animate-spin mx-auto text-slate-300" /></div>)}
-            </Modal>
+
+
+                        {/* Team Selection for Creator */}
+                        {
+                            approvalForm.role === 'creator' && (
+                                <div className="space-y-2 animate-[fadeIn_0.3s]">
+                                    <label className="text-xs font-bold text-slate-400 uppercase">Pilih Penempatan Tim</label>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {TEAMS.filter(t => !t.isSpecial).map(t => (
+                                            <button
+                                                key={t.id}
+                                                type="button"
+                                                onClick={() => setApprovalForm({ ...approvalForm, teamId: t.id })}
+                                                className={`p-3 rounded-xl border text-left text-sm font-bold transition-all ${approvalForm.teamId === t.id ? 'bg-indigo-50 border-indigo-500 text-indigo-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
+                                            >
+                                                {t.name}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )
+                        }
+
+                        <button type="button" onClick={handleConfirmApproval} className="w-full py-4 bg-emerald-500 text-white rounded-2xl font-bold shadow-lg hover:bg-emerald-600 transition-all">Setujui Akses</button>
+                    </div >
+                ) : (<div className="text-center py-10"><Loader2 className="animate-spin mx-auto text-slate-300" /></div>)
+                }
+            </Modal >
 
             {/* Other modals (Edit Weekly, News, Approval, etc.) remain standard as previous */}
             {/* ... (Keeping previous modal implementations for brevity) ... */}
