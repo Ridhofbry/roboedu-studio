@@ -477,6 +477,15 @@ export default function App() {
         return () => { unsubProj(); unsubNews(); unsubAssets(); unsubConfig(); };
     }, []);
 
+    // --- AUTO-SYNC ACTIVE PROJECT ---
+    // Fixes issue where checklist updates don't show immediately
+    useEffect(() => {
+        if (activeProject && projects.length > 0) {
+            const updated = projects.find(p => p.id === activeProject.id);
+            if (updated) setActiveProject(updated);
+        }
+    }, [projects]);
+
     useEffect(() => {
         if (!db) return;
         const unsubPublicUsers = onSnapshot(query(collection(db, 'users'), orderBy('displayName')), (s) => {
