@@ -1430,7 +1430,16 @@ export default function App() {
                                                     <CheckCircle2 size={10} /> Completed
                                                 </span>
                                                 <span className="text-[10px] text-slate-400 font-bold">
-                                                    {p.createdAt?.toDate ? p.createdAt.toDate().toLocaleDateString() : p.createdAt}
+                                                    {(() => {
+                                                        const d = p.createdAt;
+                                                        if (!d) return '-';
+                                                        try {
+                                                            if (typeof d === 'string') return d;
+                                                            if (d?.toDate) return d.toDate().toLocaleDateString();
+                                                            if (d?.seconds) return new Date(d.seconds * 1000).toLocaleDateString();
+                                                            return 'Invalid Date';
+                                                        } catch (e) { return 'Date Error'; }
+                                                    })()}
                                                 </span>
                                             </div>
                                             <div className="flex items-center gap-2 mb-2">
