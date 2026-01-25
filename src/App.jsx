@@ -11,9 +11,10 @@ import {
   Quote, Upload, Terminal
 } from 'lucide-react';
 
+// --- PRODUCTION IMPORTS ---
 import { initializeApp } from "firebase/app";
 import { 
-  getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged 
+  getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, setPersistence, browserLocalPersistence
 } from "firebase/auth";
 import { 
   getFirestore, doc, setDoc, getDoc, updateDoc, deleteDoc, 
@@ -25,8 +26,8 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
    1. KONFIGURASI API & SAFETY CHECK
    ======================================================================== */
 
-// Cek apakah API Key terbaca
-const isConfigured = import.meta.env.VITE_FIREBASE_API_KEY;
+// Cek keberadaan API Key untuk mencegah Blank Screen
+const API_KEY_EXISTS = import.meta.env.VITE_FIREBASE_API_KEY;
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -38,17 +39,18 @@ const firebaseConfig = {
 };
 
 let app, auth, db, googleProvider;
-let firebaseError = null;
 
-if (isConfigured) {
+// Inisialisasi hanya jika API Key tersedia
+if (API_KEY_EXISTS) {
     try {
         app = initializeApp(firebaseConfig);
         auth = getAuth(app);
         db = getFirestore(app);
         googleProvider = new GoogleAuthProvider();
+        // Set persistensi agar tidak logout saat refresh (penting untuk Android)
+        setPersistence(auth, browserLocalPersistence).catch(console.error);
     } catch (error) {
         console.error("Firebase Init Error:", error);
-        firebaseError = error.message;
     }
 }
 
@@ -118,12 +120,8 @@ const ALL_TASK_IDS = WORKFLOW_STEPS.flatMap(step => step.tasks.map(t => t.id));
    3. API FUNCTIONS
    ======================================================================== */
 
-// --- ONE SIGNAL ---
 const sendOneSignalNotification = async (targetRole, message, teamName) => {
-  if (!ONESIGNAL_APP_ID || !ONESIGNAL_API_KEY) {
-    console.warn("OneSignal Config Missing");
-    return;
-  }
+  if (!ONESIGNAL_APP_ID || !ONESIGNAL_API_KEY) return;
   
   const heading = targetRole === 'supervisor' ? `Laporan: ${teamName}` : `Update: ${teamName}`;
   const content = message;
@@ -137,7 +135,7 @@ const sendOneSignalNotification = async (targetRole, message, teamName) => {
     },
     body: JSON.stringify({
       app_id: ONESIGNAL_APP_ID,
-      included_segments: ["All"], // Di production, gunakan external_user_id
+      included_segments: ["All"],
       contents: { en: content },
       headings: { en: heading }
     })
@@ -145,13 +143,11 @@ const sendOneSignalNotification = async (targetRole, message, teamName) => {
 
   try {
     await fetch('https://onesignal.com/api/v1/notifications', options);
-    console.log("Notifikasi Terkirim");
   } catch (err) {
     console.error("Gagal kirim notif", err);
   }
 };
 
-// --- GEMINI AI ---
 const generateAIScript = async (prompt) => {
   if (!genAI) return "Error: API Key Gemini Missing";
   try {
@@ -243,7 +239,11 @@ const WeeklyBotReport = ({ projects }) => {
         });
         return { completed, late, onTime };
     }, [projects]);
-    const getMessage = () => { if (report.completed === 0) return "Minggu ini belum ada project selesai. Ayo semangat tim!"; if (report.late > 0) return `Minggu ini produktif, namun ada ${report.late} project yang melebihi deadline.`; return `Performa Luar Biasa! ${report.completed} Project selesai tepat waktu minggu ini.`; };
+    const getMessage = () => {
+        if (report.completed === 0) return "Minggu ini belum ada project selesai. Ayo semangat tim!";
+        if (report.late > 0) return `Minggu ini produktif, namun ada ${report.late} project yang melebihi deadline. Perhatikan ketepatan waktu!`;
+        return `Performa Luar Biasa! ${report.completed} Project selesai tepat waktu minggu ini. Pertahankan!`;
+    };
     return (
         <div className="bg-indigo-900 text-white p-6 rounded-[2.5rem] shadow-xl border border-indigo-700 relative overflow-hidden mb-8">
              <div className="absolute top-0 right-0 p-16 bg-white/10 rounded-full blur-3xl -mr-10 -mt-10"></div>
@@ -255,28 +255,34 @@ const WeeklyBotReport = ({ projects }) => {
     );
 };
 
-const RoboLogo = ({ size = 60 }) => (
-  <svg width={size} height={size} viewBox="0 0 100 100" className="overflow-visible drop-shadow-xl">
-    <path d="M50 20 L50 35" stroke="#4f46e5" strokeWidth="4" strokeLinecap="round" />
-    <circle cx="50" cy="15" r="5" fill="#f43f5e" className="animate-pulse" />
-    <rect x="25" y="35" width="50" height="40" rx="10" fill="white" stroke="#4f46e5" strokeWidth="3" />
-    <rect x="30" y="40" width="40" height="30" rx="6" fill="#e0e7ff" />
-    <circle cx="40" cy="55" r="4" fill="#1e1b4b" />
-    <circle cx="60" cy="55" r="4" fill="#1e1b4b" />
-  </svg>
-);
-
 /* ========================================================================
    MAIN APPLICATION
    ======================================================================== */
 
 export default function App() {
+  // --- SAFETY CHECK RENDER ---
+  // Jika API Key tidak ada (belum diset di Vercel), tampilkan layar error daripada Blank Screen
+  if (!API_KEY_EXISTS) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-100 p-8 text-center font-sans">
+        <div className="max-w-md bg-white p-8 rounded-3xl shadow-xl">
+            <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+            <h1 className="text-2xl font-black text-slate-800 mb-2">Konfigurasi Hilang!</h1>
+            <p className="text-slate-500 mb-4 text-sm">Website ini belum terhubung ke Firebase. Mohon masukkan <b>Environment Variables</b> (API Key) di Dashboard Vercel.</p>
+            <div className="bg-slate-100 p-4 rounded-xl text-xs text-left font-mono text-slate-600 break-all border border-slate-200">
+                VITE_FIREBASE_API_KEY=...<br/>VITE_FIREBASE_AUTH_DOMAIN=...
+            </div>
+        </div>
+      </div>
+    );
+  }
+
   // State
-  const [currentUser, setCurrentUser] = useState(null);
+  const [user, setUser] = useState(null);
   const [userData, setUserData] = useState(null);
   const [view, setView] = useState('landing'); 
   
-  // Realtime Data Containers
+  // Realtime Data
   const [projects, setProjects] = useState([]);
   const [news, setNews] = useState([]);
   const [assets, setAssets] = useState([]);
@@ -326,71 +332,51 @@ export default function App() {
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', action: null, type: 'neutral' });
   const [isAILoading, setIsAILoading] = useState(false);
 
-  // --- FIREBASE LISTENERS (CRITICAL FIX FOR AUTH) ---
+  // --- FIREBASE LISTENERS ---
   useEffect(() => {
     if (!auth) return;
     const unsubAuth = onAuthStateChanged(auth, async (u) => {
-      setCurrentUser(u);
-      
+      setUser(u);
       if (u) {
         const docRef = doc(db, 'users', u.uid);
         const docSnap = await getDoc(docRef);
-        const email = u.email;
         
-        // 1. CEK APAKAH USER ADA DI DATABASE
         if (docSnap.exists()) {
           const d = docSnap.data();
-          // Force update jika email ada di list SUPER_ADMIN_EMAILS tetapi role bukan super_admin
-          if (SUPER_ADMIN_EMAILS.includes(email) && d.role !== 'super_admin') {
+          // FORCE UPDATE SUPER ADMIN ROLE
+          if (SUPER_ADMIN_EMAILS.includes(u.email) && d.role !== 'super_admin') {
              await updateDoc(docRef, { role: 'super_admin' });
              setUserData({ ...d, role: 'super_admin' });
           } else {
              setUserData(d);
           }
-
-          // Redirect sesuai status profil
+          // Redirect
           if (!d.isProfileComplete) {
              setView('profile-setup');
              setProfileForm({ username: u.displayName || '', school: '', city: '' });
           } else {
              setView('dashboard');
           }
-          
         } else {
-          // 2. USER BELUM ADA DI DATABASE
-          if(SUPER_ADMIN_EMAILS.includes(email)) {
-             // JIKA SUPER ADMIN: BUAT AKUN LANGSUNG & REDIRECT KE PROFILE SETUP
+          // USER DOES NOT EXIST
+          if(SUPER_ADMIN_EMAILS.includes(u.email)) {
+             // AUTO CREATE SUPER ADMIN
              const newAdmin = {
-                email: u.email, 
-                displayName: u.displayName, 
-                photoURL: u.photoURL,
-                role: 'super_admin', 
-                isProfileComplete: false, // Wajib isi profil dulu
-                nameChangeCount: 0, 
-                uid: u.uid
+                email: u.email, displayName: u.displayName, photoURL: u.photoURL,
+                role: 'super_admin', isProfileComplete: false, nameChangeCount: 0, uid: u.uid
              };
              await setDoc(docRef, newAdmin);
              setUserData(newAdmin);
-             
-             // Hapus dari pending jika ada
-             const q = query(collection(db, 'pending_users'), where('email', '==', email));
-             const snaps = await getDocs(q);
-             snaps.forEach(async (doc) => await deleteDoc(doc.ref));
-
              setView('profile-setup');
-             showToast("Welcome Super Admin!");
+             showToast("Halo Super Admin! Lengkapi profil.");
           } else {
-             // JIKA BUKAN SUPER ADMIN: MUNCULKAN ALERT PENDING & LOGOUT
+             // PENDING USER (HANDLED IN LOGIN, BUT DOUBLE CHECK HERE)
              setUserData(null);
              setView('landing');
-             // Kita anggap user sudah ditambah ke pending saat klik tombol login
-             // Logoutkan user agar tidak ada sesi aktif tanpa data
              await signOut(auth);
-             setShowPendingAlert(true); 
           }
         }
       } else {
-        // NO USER LOGIN
         setUserData(null);
         setView('landing');
       }
@@ -400,6 +386,7 @@ export default function App() {
 
   useEffect(() => {
     if (!db) return;
+    // Safety check: only run listener if collection exists (it will be created on first write)
     const unsubProj = onSnapshot(collection(db, 'projects'), (s) => setProjects(s.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubNews = onSnapshot(collection(db, 'news'), (s) => setNews(s.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubAssets = onSnapshot(collection(db, 'assets'), (s) => setAssets(s.docs.map(d => ({ id: d.id, ...d.data() }))));
@@ -415,14 +402,11 @@ export default function App() {
 
   useEffect(() => {
     if (!db) return;
-    
-    // Always fetch public users (creators/tim5)
     const unsubPublicUsers = onSnapshot(query(collection(db, 'users'), orderBy('displayName')), (s) => {
         const users = s.docs.map(d => ({ ...d.data(), uid: d.id }));
         setUsersList(users);
     });
 
-    // Fetch Pending Users ONLY if Admin
     let unsubPending = () => {};
     if (userData?.role === 'super_admin' || userData?.role === 'supervisor') {
       unsubPending = onSnapshot(collection(db, 'pending_users'), (s) => {
@@ -457,39 +441,37 @@ export default function App() {
         const email = result.user.email;
         const uid = result.user.uid;
 
-        // Cek DB apakah user sudah ada
         const userDoc = await getDoc(doc(db, 'users', uid));
 
         if (userDoc.exists()) {
-             // User sudah ada, biarkan listener onAuthStateChanged handle redirect
+             // User exists, listener handles navigation
+        } else if (SUPER_ADMIN_EMAILS.includes(email)) {
+             // --- FORCE PROMOTE SUPER ADMIN ---
+             const newAdmin = {
+                email: email, displayName: result.user.displayName, photoURL: result.user.photoURL,
+                role: 'super_admin', isProfileComplete: false, nameChangeCount: 0, uid
+             };
+             await setDoc(doc(db, 'users', uid), newAdmin);
+             // Cleanup if accidentally in pending
+             const q = query(collection(db, 'pending_users'), where('email', '==', email));
+             const snaps = await getDocs(q);
+             snaps.forEach(async (doc) => await deleteDoc(doc.ref));
         } else {
-            // User belum ada di 'users'
-            if (SUPER_ADMIN_EMAILS.includes(email)) {
-                // Biarkan listener handle force create
-            } else {
-                // Jika bukan super admin, masukkan ke pending
-                const q = query(collection(db, 'pending_users'), where('email', '==', email));
-                const querySnap = await getDocs(q);
-                
-                if (querySnap.empty) {
-                    await addDoc(collection(db, 'pending_users'), {
-                        email, displayName: result.user.displayName, photoURL: result.user.photoURL,
-                        date: new Date().toLocaleDateString(), uid
-                    });
-                }
-                // Sign out agar tidak masuk dashboard
-                await signOut(auth);
-                setShowPendingAlert(true);
-            }
+             // Normal user -> Check if already pending
+             const q = query(collection(db, 'pending_users'), where('email', '==', email));
+             const querySnap = await getDocs(q);
+             if (querySnap.empty) {
+                await addDoc(collection(db, 'pending_users'), {
+                    email, displayName: result.user.displayName, photoURL: result.user.photoURL,
+                    date: new Date().toLocaleDateString(), uid
+                });
+             }
+             await signOut(auth);
+             setShowPendingAlert(true);
         }
     } catch (err) {
-        // Handle error seperti popup closed, network error, dll
         console.error(err);
-        if (err.code === 'auth/popup-closed-by-user') {
-            showToast("Login dibatalkan", "error");
-        } else {
-            showToast("Login Gagal: " + err.message, "error");
-        }
+        showToast("Login Gagal: " + err.message, "error");
     } finally {
         setLoadingLogin(false);
     }
@@ -500,7 +482,7 @@ export default function App() {
   // 2. PROFILE
   const handleProfileSubmit = async () => {
       try {
-          await updateDoc(doc(db, 'users', currentUser.uid), {
+          await updateDoc(doc(db, 'users', user.uid), {
               displayName: profileForm.username,
               school: profileForm.school,
               city: profileForm.city,
@@ -519,7 +501,7 @@ export default function App() {
               if (newCount >= 2) return showToast("Batas ganti nama habis!", "error");
               newCount++;
           }
-          await updateDoc(doc(db, 'users', currentUser.uid), {
+          await updateDoc(doc(db, 'users', user.uid), {
               displayName: editProfileData.displayName,
               bio: editProfileData.bio,
               photoURL: editProfileData.photoURL,
@@ -555,9 +537,9 @@ export default function App() {
       }
   };
 
-  const handleRejectUser = (user) => {
+  const handleRejectUser = (u) => {
       requestConfirm("Tolak?", "Hapus user.", async () => {
-          await deleteDoc(doc(db, 'pending_users', user.id));
+          await deleteDoc(doc(db, 'pending_users', u.id));
           showToast("Ditolak.");
       });
   };
@@ -600,32 +582,6 @@ export default function App() {
       handleUpdateProjectFirestore(projId, { completedTasks: newTasks, progress: newProgress, status });
   };
 
-  // 5. ASSETS & NEWS & LOGO
-  const handleAddAsset = async () => {
-      if(!newAssetForm.title) return;
-      await addDoc(collection(db, 'assets'), { ...newAssetForm, date: new Date().toLocaleDateString() });
-      setIsAddAssetOpen(false); showToast("Aset Ditambah");
-  };
-  const handleDeleteAsset = (id) => {
-      requestConfirm("Hapus Aset?", "Permanen.", async () => {
-          await deleteDoc(doc(db, 'assets', id));
-          showToast("Aset Dihapus");
-      });
-  };
-  const handleSaveNews = async () => {
-      if (newsForm.id) { await updateDoc(doc(db, 'news', newsForm.id), newsForm); }
-      setIsEditNewsOpen(false); showToast("Berita Update");
-  };
-  const handleSaveLogo = async () => {
-      await setDoc(doc(db, 'site_config', 'main'), { logo: logoForm }, { merge: true });
-      setIsEditLogoOpen(false); showToast("Logo Update");
-  };
-  const handleSaveWeekly = async () => {
-      await setDoc(doc(db, 'site_config', 'main'), { weekly: weeklyForm }, { merge: true });
-      setIsEditWeeklyOpen(false); showToast("Highlight Update");
-  };
-
-  // 6. TIM 5 & OTHERS
   const handleRemoveImage = (index) => {
       const newImages = [...activeProject.previewImages]; newImages[index] = null;
       handleUpdateProjectFirestore(activeProject.id, { previewImages: newImages });
@@ -693,6 +649,30 @@ export default function App() {
       }, 'neutral');
   };
   
+  // 5. ASSETS & NEWS & LOGO
+  const handleAddAsset = async () => {
+      if(!newAssetForm.title) return;
+      await addDoc(collection(db, 'assets'), { ...newAssetForm, date: new Date().toLocaleDateString() });
+      setIsAddAssetOpen(false); showToast("Aset Ditambah");
+  };
+  const handleDeleteAsset = (id) => {
+      requestConfirm("Hapus Aset?", "Permanen.", async () => {
+          await deleteDoc(doc(db, 'assets', id));
+          showToast("Aset Dihapus");
+      });
+  };
+  const handleSaveNews = async () => {
+      if (newsForm.id) { await updateDoc(doc(db, 'news', newsForm.id), newsForm); }
+      setIsEditNewsOpen(false); showToast("Berita Update");
+  };
+  const handleSaveLogo = async () => {
+      await setDoc(doc(db, 'site_config', 'main'), { logo: logoForm }, { merge: true });
+      setIsEditLogoOpen(false); showToast("Logo Update");
+  };
+  const handleSaveWeekly = async () => {
+      await setDoc(doc(db, 'site_config', 'main'), { weekly: weeklyForm }, { merge: true });
+      setIsEditWeeklyOpen(false); showToast("Highlight Update");
+  };
   const handleScript = async () => {
       setIsAILoading(true);
       const text = await generateAIScript(aiPrompt);
@@ -745,7 +725,7 @@ export default function App() {
                 <button onClick={() => setView('landing')} className={`text-sm font-bold transition-colors ${view === 'landing' ? 'text-indigo-600' : 'text-slate-500 hover:text-indigo-600'}`}>Beranda</button>
                 {/* ARCHIVE BUTTON REMOVED FROM NAVBAR - NOW IN DASHBOARD/HOME */}
 
-                {currentUser ? (
+                {user ? (
                     <div className="flex items-center gap-3 pl-4 border-l border-slate-200">
                         <div className="text-right">
                             <p className="text-xs font-bold text-slate-800">{userData?.displayName || 'User'}</p>
@@ -758,7 +738,7 @@ export default function App() {
                                 <div className="absolute bottom-0 right-0 w-3 h-3 bg-white rounded-full border border-slate-200 flex items-center justify-center"><Settings size={8} className="text-slate-500"/></div>
                             </button>
                         )}
-                        {!userData?.isProfileComplete && <img src={currentUser.photoURL} className="w-10 h-10 rounded-full border-2 border-slate-200 bg-slate-100 object-cover"/>}
+                        {!userData?.isProfileComplete && <img src={user.photoURL} className="w-10 h-10 rounded-full border-2 border-slate-200 bg-slate-100 object-cover"/>}
                         
                         {userData?.role === 'super_admin' && (
                            <button onClick={() => setView('user-management')} className="relative p-2 bg-indigo-50 rounded-full text-indigo-600 hover:bg-indigo-100 transition-colors" title="Manajemen User">
@@ -785,7 +765,7 @@ export default function App() {
       {/* MOBILE MENU */}
       {showMobileMenu && (
         <div className="fixed inset-0 z-40 bg-white/95 backdrop-blur-md pt-24 px-6 animate-[slideDown_0.3s_ease-out] md:hidden flex flex-col gap-4">
-            {currentUser ? (
+            {user ? (
                 <>
                     <div className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100" onClick={() => { 
                         if(userData?.isProfileComplete) {
@@ -946,8 +926,8 @@ export default function App() {
                             <h1 className="text-2xl font-black text-center text-slate-900 tracking-tight">RoboEdu<span className="text-indigo-600">.Studio</span></h1>
                         </div>
                         <div className="space-y-4">
-                            <div className="text-center text-slate-400 text-xs font-bold mb-4">LOGIN GOOGLE (SIMULASI)</div>
-                            <button onClick={handleGoogleLogin} disabled={loadingLogin} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg shadow-indigo-200 hover:bg-indigo-700 hover:scale-[1.02] transition-all flex items-center justify-center gap-3">{loadingLogin ? <Loader2 className="animate-spin"/> : <Shield size={20}/>} Sign in with Google</button>
+                            <div className="text-center text-slate-400 text-xs font-bold mb-4">LOGIN GOOGLE</div>
+                            <button onClick={handleGoogleLogin} disabled={loadingLogin} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg hover:bg-indigo-700 flex items-center justify-center gap-3">{loadingLogin ? <Loader2 className="animate-spin"/> : <Shield size={20}/>} Sign in with Google</button>
                         </div>
                     </div>
                     <button onClick={() => setView('landing')} className="mt-8 flex items-center gap-2 text-slate-400 text-xs font-bold hover:text-indigo-600 transition-colors"><ChevronLeft size={14}/> Kembali ke Beranda</button>
@@ -1389,7 +1369,10 @@ export default function App() {
           <div className="p-4 text-center">
               <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce ${confirmModal.type === 'danger' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>{confirmModal.type === 'danger' ? <AlertCircle size={32}/> : <CheckCircle2 size={32}/>}</div>
               <p className="text-sm text-slate-600 mb-6 font-medium leading-relaxed">{confirmModal.message}</p>
-              <div className="flex gap-3"><button onClick={() => setConfirmModal({...confirmModal, isOpen: false})} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold">Batal</button><button onClick={executeConfirmAction} className={`flex-1 py-3 text-white rounded-xl font-bold ${confirmModal.type === 'danger' ? 'bg-red-500' : 'bg-blue-600'}`}>Ya, Lanjutkan</button></div>
+              <div className="flex gap-3">
+                  <button onClick={() => setConfirmModal({...confirmModal, isOpen: false})} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold">Batal</button>
+                  <button onClick={executeConfirmAction} className={`flex-1 py-3 text-white rounded-xl font-bold ${confirmModal.type === 'danger' ? 'bg-red-500' : 'bg-blue-600'}`}>Ya, Lanjutkan</button>
+              </div>
           </div>
       </Modal>
 
@@ -1507,9 +1490,7 @@ export default function App() {
             <div className="animate-[fadeIn_0.2s]">
                 <span className="bg-indigo-50 text-indigo-600 px-3 py-1 rounded-lg text-[10px] font-bold uppercase mb-4 inline-block">{selectedNews.category}</span>
                 <h2 className="text-2xl font-black text-slate-800 mb-4 leading-tight">{selectedNews.title}</h2>
-                <div className="text-sm text-slate-600 leading-relaxed bg-slate-50 p-6 rounded-[2rem] mb-4 border border-slate-100 font-medium whitespace-pre-line">
-                    {selectedNews.content}
-                </div>
+                <div className="text-sm text-slate-600 leading-relaxed bg-slate-50 p-6 rounded-[2rem] mb-4 border border-slate-100 font-medium whitespace-pre-line">{selectedNews.content}</div>
                 <div className="text-xs text-slate-400 font-bold text-right">Diposting: {selectedNews.date}</div>
             </div>
         )}
