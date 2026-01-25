@@ -1320,51 +1320,7 @@ export default function App() {
                         </div>
                     )}
 
-                    {/* Archive View */}
-                    {view === 'archive' && (
-                        <div className="pt-20 animate-[fadeIn_0.3s]">
-                            <div className="flex justify-between items-end mb-8">
-                                <div>
-                                    <button onClick={() => setView('landing')} className="mb-2 text-xs font-bold text-slate-400 hover:text-indigo-600 flex items-center gap-1"><ChevronLeft size={14} /> Kembali ke Beranda</button>
-                                    <h2 className="text-3xl font-black text-slate-800">Arsip Project</h2>
-                                </div>
-                            </div>
 
-                            <div className="mb-10">
-                                <PerformanceChart data={getWeeklyAnalytics((userData?.role === 'supervisor' || userData?.role === 'super_admin') ? 'all' : userData?.teamId)} title="Statistik Arsip Mingguan" />
-                            </div>
-
-                            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                {projects.filter(p => {
-                                    if (p.status !== 'Completed') return false;
-                                    if (userData?.role !== 'supervisor' && userData?.role !== 'super_admin' && p.teamId !== userData?.teamId) return false;
-                                    return true;
-                                }).map(p => (
-                                    <div key={p.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex flex-col gap-4 hover:shadow-md transition-all">
-                                        <div>
-                                            <div className="text-[10px] text-slate-400 mb-1 font-bold">{p.createdAt}</div>
-                                            <h4 className="font-bold text-slate-700 text-lg leading-tight">{p.title}</h4>
-                                        </div>
-                                        {p.isBigProject && <BotEvaluation project={p} />}
-
-                                        <div className="flex gap-2 mt-auto">
-                                            {/* LINK & DELETE ONLY FOR ADMIN OR IF LINK IS PUBLIC (Here restricted) */}
-                                            {p.finalLink && (userData?.role === 'supervisor' || userData?.role === 'super_admin') ? (
-                                                <a href={p.finalLink} target="_blank" className="flex-1 py-2 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center hover:bg-indigo-100 transition-colors font-bold text-xs"><LinkIcon size={14} className="mr-2" /> Drive</a>
-                                            ) : (
-                                                <div className="flex-1 py-2 bg-slate-50 text-slate-400 rounded-xl flex items-center justify-center font-bold text-xs cursor-not-allowed"><Lock size={12} className="mr-2" /> Protected</div>
-                                            )}
-
-                                            {(userData?.role === 'supervisor' || userData?.role === 'super_admin') && (
-                                                <button onClick={(e) => { e.stopPropagation(); handleDeleteProject(p.id); }} className="p-2 bg-red-50 text-red-500 rounded-xl hover:bg-red-100 transition-colors"><Trash2 size={18} /></button>
-                                            )}
-                                        </div>
-                                    </div>
-                                ))}
-                                {projects.filter(p => p.status === 'Completed').length === 0 && <div className="col-span-full text-center py-10 text-slate-400 font-medium">Belum ada project yang diarsipkan.</div>}
-                            </div>
-                        </div>
-                    )}
 
                     {/* Assets View Logic */}
                     {view === 'assets' && (
@@ -1423,6 +1379,11 @@ export default function App() {
                                     <p className="text-sm text-slate-500 mt-1">Project yang sudah selesai</p>
                                 </div>
                             </div>
+
+                            <div className="mb-10">
+                                <PerformanceChart data={getWeeklyAnalytics((userData?.role === 'supervisor' || userData?.role === 'super_admin') ? 'all' : userData?.teamId)} title="Statistik Arsip Mingguan" />
+                            </div>
+
                             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
                                 {projects
                                     .filter(p => {
