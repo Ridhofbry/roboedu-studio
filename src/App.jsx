@@ -407,11 +407,13 @@ export default function App() {
                             setProfileForm({ username: '', school: '', city: '' });
                             console.log('🔵 DEBUG: Profile form reset');
                         } else {
+                            // Cek apakah sudah ada di pending list?
                             const q = query(collection(db, 'pending_users'), where('email', '==', u.email));
                             const querySnap = await getDocs(q);
-                            if (querySnap.empty) {
-                                await addDoc(collection(db, 'pending_users'), { email: u.email, displayName: "New User", photoURL: `https://ui-avatars.com/api/?name=${u.email}`, date: new Date().toLocaleDateString(), uid: u.uid });
-                            }
+
+                            // Jika user tidak ada di DB User & tidak ada di Pending -> Berarti Ghost User / Error Register
+                            // Kita tidak otomatis buat di sini lagi, karena sudah ditangani di handleEmailAuth
+
                             await signOut(auth);
                             setUserData(null);
                             setView('landing');
@@ -481,7 +483,26 @@ export default function App() {
         setShowPendingAlert(false);
         try {
             if (isRegistering) {
-                await createUserWithEmailAndPassword(auth, authEmail, authPassword);
+                // EXPLICIT REGISTRATION FLOW
+                const userCredential = await createUserWithEmailAndPassword(auth, authEmail, authPassword);
+                const u = userCredential.user;
+
+                // 1. Create Pending User Doc explicitly
+                await addDoc(collection(db, 'pending_users'), {
+                    email: u.email,
+                    displayName: "New Member",
+                    photoURL: `https://ui-avatars.com/api/?name=${u.email}&background=random`,
+                    date: new Date().toLocaleDateString(),
+                    uid: u.uid
+                });
+
+                // 2. Immediate Sign Out (prevent auto-login)
+                await signOut(auth);
+
+                // 3. UI Feedback
+                setShowPendingAlert(true);
+                setView('landing');
+                showToast("Registrasi berhasil! Tunggu admin.", "success");
             } else {
                 await signInWithEmailAndPassword(auth, authEmail, authPassword);
             }
@@ -490,6 +511,7 @@ export default function App() {
             if (err.code === 'auth/invalid-credential') errorMsg = "Email atau password salah.";
             if (err.code === 'auth/email-already-in-use') errorMsg = "Email ini sudah terdaftar.";
             showToast(errorMsg, "error");
+        } finally {
             setLoadingLogin(false);
         }
     };
