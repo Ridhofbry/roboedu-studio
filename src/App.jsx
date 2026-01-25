@@ -1427,7 +1427,7 @@ export default function App() {
                                 {projects
                                     .filter(p => {
                                         // Show completed projects only
-                                        if (p.status !== ' Completed') return false;
+                                        if (p.status !== 'Completed') return false;
 
                                         // Team-based filter
                                         if (userData?.role === 'supervisor' || userData?.role === 'super_admin') {
