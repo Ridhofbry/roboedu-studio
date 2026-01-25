@@ -50,7 +50,7 @@ if (API_KEY_EXISTS) {
         app = initializeApp(firebaseConfig);
         auth = getAuth(app);
         db = getFirestore(app);
-        // Set persistensi agar sesi tidak hilang saat refresh
+        // Penting: Set persistensi agar sesi tidak hilang saat refresh
         setPersistence(auth, browserLocalPersistence).catch(console.error);
     } catch (error) {
         console.error("Firebase Init Error:", error);
@@ -273,11 +273,12 @@ export default function App() {
   const [selectedNews, setSelectedNews] = useState(null);
   const [selectedPendingUser, setSelectedPendingUser] = useState(null);
 
-  // Form States
+  // Form States (Login)
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
 
+  // Form States (Data)
   const [profileForm, setProfileForm] = useState({ username: '', school: '', city: '' });
   const [editProfileData, setEditProfileData] = useState({ displayName: '', bio: '', photoURL: '', school: '', city: '' });
   const [newProjectForm, setNewProjectForm] = useState({ title: '', isBigProject: false, teamId: 'team-1', deadline: '' });
@@ -303,15 +304,14 @@ export default function App() {
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', action: null, type: 'neutral' });
   const [isAILoading, setIsAILoading] = useState(false);
 
-  // --- FIREBASE AUTH LISTENER (CRITICAL LOGIC) ---
+  // --- FIREBASE AUTH LISTENER (THE CORE LOGIC) ---
   useEffect(() => {
     if (!auth) return;
     
-    // Start Loading
+    // Start Checking
     setIsAuthChecking(true);
 
     const unsubAuth = onAuthStateChanged(auth, async (u) => {
-      // 1. Pastikan selalu try-catch agar loading tidak stuck
       try {
         setUser(u); // Sync local state user
         
@@ -320,15 +320,14 @@ export default function App() {
           const docSnap = await getDoc(docRef);
           const email = u.email;
           
+          // 1. CEK APAKAH USER ADA DI DATABASE UTAMA
           if (docSnap.exists()) {
-            // --- USER SUDAH ADA DI DATABASE ---
             const d = docSnap.data();
             
-            // Auto Promote Super Admin (Jika terdaftar tapi role salah)
+            // Force upgrade Super Admin jika emailnya masuk list tapi role bukan super_admin
             if (SUPER_ADMIN_EMAILS.includes(email) && d.role !== 'super_admin') {
-               const updatedAdmin = { ...d, role: 'super_admin' };
                await updateDoc(docRef, { role: 'super_admin' });
-               setUserData(updatedAdmin);
+               setUserData({ ...d, role: 'super_admin' });
             } else {
                setUserData(d);
             }
@@ -336,22 +335,22 @@ export default function App() {
             // Redirect Logic
             if (!d.isProfileComplete) {
                setView('profile-setup');
-               setProfileForm({ username: u.displayName || '', school: d.school || '', city: d.city || '' });
+               setProfileForm({ username: d.displayName || '', school: d.school || '', city: d.city || '' });
             } else {
                setView('dashboard');
             }
             
           } else {
-            // --- USER BARU (BELUM ADA DI USERS) ---
+            // 2. USER TIDAK ADA DI DATABASE
             
             if(SUPER_ADMIN_EMAILS.includes(email)) {
-               // === SUPER ADMIN: LANGSUNG BUAT AKUN ===
+               // === SUPER ADMIN FLOW: BUAT AKUN BARU OTOMATIS ===
                const newAdmin = {
                   email: u.email, 
-                  displayName: u.displayName || "Super Admin", 
-                  photoURL: u.photoURL || `https://ui-avatars.com/api/?name=${u.email}&background=random`,
+                  displayName: "Super Admin", 
+                  photoURL: `https://ui-avatars.com/api/?name=${u.email}&background=random`,
                   role: 'super_admin', 
-                  isProfileComplete: false, // Wajib isi profil
+                  isProfileComplete: false, 
                   nameChangeCount: 0, 
                   uid: u.uid,
                   school: '',
@@ -360,32 +359,31 @@ export default function App() {
                };
                
                await setDoc(docRef, newAdmin);
+               setUserData(newAdmin);
                
-               // Hapus dari pending jika ada
+               // Bersihkan dari pending
                const q = query(collection(db, 'pending_users'), where('email', '==', email));
                const snaps = await getDocs(q);
                snaps.forEach(async (doc) => await deleteDoc(doc.ref));
 
-               setUserData(newAdmin);
                setView('profile-setup');
-               showToast("Akun Super Admin dibuat! Silakan lengkapi profil.");
-
+               showToast("Akun Super Admin Dibuat!");
             } else {
-               // === USER BIASA: MASUK PENDING ===
+               // === NORMAL USER FLOW ===
                const q = query(collection(db, 'pending_users'), where('email', '==', email));
                const querySnap = await getDocs(q);
                
                if (querySnap.empty) {
                    await addDoc(collection(db, 'pending_users'), {
                        email, 
-                       displayName: u.displayName || "New User", 
-                       photoURL: u.photoURL || `https://ui-avatars.com/api/?name=${u.email}&background=random`,
+                       displayName: "New User", 
+                       photoURL: `https://ui-avatars.com/api/?name=${u.email}&background=random`,
                        date: new Date().toLocaleDateString(), 
                        uid: u.uid
                    });
                }
                
-               // Force Logout
+               // KICK OUT
                await signOut(auth);
                setUserData(null);
                setView('landing');
@@ -393,17 +391,15 @@ export default function App() {
             }
           }
         } else {
-          // --- TIDAK ADA USER LOGIN ---
+          // NO USER
           setUserData(null);
           setView('landing');
         }
       } catch (err) {
-        console.error("Auth Listener Error:", err);
-        showToast("Terjadi kesalahan sistem.", "error");
+          console.error("Auth Listener Error:", err);
       } finally {
-        // SELALU MATIKAN LOADING
-        setIsAuthChecking(false);
-        setLoadingLogin(false);
+          setIsAuthChecking(false);
+          setLoadingLogin(false);
       }
     });
     return () => unsubAuth();
@@ -465,10 +461,10 @@ export default function App() {
     try {
         if (isRegistering) {
             await createUserWithEmailAndPassword(auth, authEmail, authPassword);
-            // logic user baru ditangani di onAuthStateChanged
+            // onAuthStateChanged akan handle logic create user/pending
         } else {
             await signInWithEmailAndPassword(auth, authEmail, authPassword);
-            // logic user lama ditangani di onAuthStateChanged
+            // onAuthStateChanged akan handle logic redirect
         }
     } catch (err) {
         console.error("Auth error:", err);
@@ -478,40 +474,41 @@ export default function App() {
         if (err.code === 'auth/weak-password') errorMsg = "Password terlalu lemah (min 6 karakter).";
         
         showToast(errorMsg, "error");
-        setLoadingLogin(false);
+        setLoadingLogin(false); // Stop loading if error
     }
   };
 
   const handleLogout = async () => { await signOut(auth); setView('landing'); setShowMobileMenu(false); };
 
-  // --- PROFILE SUBMIT FIX ---
+  // PROFILE (Using 'user' consistent variable)
   const handleProfileSubmit = async () => {
-    if (!user) return;
-    try {
-        // 1. Update ke Firestore
-        const newData = {
-            displayName: profileForm.username,
-            school: profileForm.school,
-            city: profileForm.city,
-            isProfileComplete: true, // PENTING: Set true
-            bio: userData?.bio || "Member Baru"
-        };
-        
-        await updateDoc(doc(db, 'users', user.uid), newData);
-        
-        // 2. Ambil data terbaru untuk update state lokal (Mencegah blank screen)
-        const updatedDoc = await getDoc(doc(db, 'users', user.uid));
-        
-        if (updatedDoc.exists()) {
-             setUserData(updatedDoc.data()); // Update state
-             setView('dashboard'); // Pindah halaman SETELAH state ada
-             sendOneSignalNotification('mobile_push', 'Kamu berhasil login Roboedu Studio');
-             showToast(`Selamat datang, ${profileForm.username}`);
-        }
-    } catch (e) { 
-      console.error("Profile submit error:", e);
-      showToast("Gagal simpan profil: " + e.message, "error"); 
-    }
+      try {
+          // 1. Update ke Firestore
+          await updateDoc(doc(db, 'users', user.uid), {
+              displayName: profileForm.username,
+              school: profileForm.school,
+              city: profileForm.city,
+              isProfileComplete: true, // Pastikan flag ini true
+              bio: userData?.bio || "Member Baru"
+          });
+          
+          // 2. Ambil data terbaru langsung dari Firestore untuk memastikan state sinkron
+          const updatedDocSnap = await getDoc(doc(db, 'users', user.uid));
+          
+          if (updatedDocSnap.exists()) {
+              const updatedData = updatedDocSnap.data();
+              // 3. Update State Lokal DULU
+              setUserData(updatedData);
+              // 4. Baru pindah halaman
+              setView('dashboard');
+              
+              sendOneSignalNotification('mobile_push', 'Kamu berhasil login Roboedu Studio');
+              showToast(`Selamat datang, ${profileForm.username}`);
+          }
+      } catch (e) { 
+        console.error("Profile submit error:", e);
+        showToast("Gagal simpan profil: " + e.message, "error"); 
+      }
   };
 
   const handleUpdateProfile = async () => {
@@ -521,7 +518,7 @@ export default function App() {
               if (newCount >= 2) return showToast("Batas ganti nama habis!", "error");
               newCount++;
           }
-          await updateDoc(doc(db, 'users', user.uid), {
+          await updateDoc(doc(db, 'users', user.uid), { // user.uid consistent
               displayName: editProfileData.displayName,
               bio: editProfileData.bio,
               photoURL: editProfileData.photoURL,
@@ -545,7 +542,11 @@ export default function App() {
               isProfileComplete: false,
               nameChangeCount: 0
           };
-          await setDoc(doc(db, 'users', selectedPendingUser.uid), newUser);
+          
+          // Ensure UID exists
+          if (!newUser.uid) throw new Error("UID Missing");
+
+          await setDoc(doc(db, 'users', newUser.uid), newUser);
           await deleteDoc(doc(db, 'pending_users', selectedPendingUser.id));
           setIsApprovalModalOpen(false); setSelectedPendingUser(null); showToast("User Disetujui!");
       } catch (e) { console.error(e); showToast("Gagal Approve: " + e.message, "error"); }
@@ -657,7 +658,7 @@ export default function App() {
                                 <div className="absolute bottom-0 right-0 w-3 h-3 bg-white rounded-full border border-slate-200 flex items-center justify-center"><Settings size={8} className="text-slate-500"/></div>
                             </button>
                         )}
-                        {!userData?.isProfileComplete && <img src={user.photoURL || `https://ui-avatars.com/api/?name=${user.email}`} className="w-10 h-10 rounded-full border-2 border-slate-200 bg-slate-100 object-cover"/>}
+                        {!userData?.isProfileComplete && <img src={user.photoURL} className="w-10 h-10 rounded-full border-2 border-slate-200 bg-slate-100 object-cover"/>}
                         
                         {userData?.role === 'super_admin' && (
                            <button onClick={() => setView('user-management')} className="relative p-2 bg-indigo-50 rounded-full text-indigo-600 hover:bg-indigo-100 transition-colors" title="Manajemen User">
@@ -691,9 +692,9 @@ export default function App() {
                             setEditProfileData(userData); setIsEditProfileOpen(true); setShowMobileMenu(false); 
                         }
                     }}>
-                        <img src={userData?.photoURL || user.photoURL} className="w-12 h-12 rounded-full border border-slate-200"/>
+                        <img src={userData?.photoURL} className="w-12 h-12 rounded-full border border-slate-200"/>
                         <div>
-                            <p className="font-bold text-slate-800">{userData?.displayName || user.email}</p>
+                            <p className="font-bold text-slate-800">{userData?.displayName}</p>
                             <div className="flex items-center gap-2">
                                 <p className="text-xs text-indigo-600 font-black uppercase">{userData?.role?.replace('_', ' ')}</p>
                                 {userData?.isProfileComplete && <span className="text-[10px] text-slate-400 bg-white px-1 rounded border">Edit Profil</span>}
@@ -722,7 +723,7 @@ export default function App() {
         </div>
       )}
 
-      {/* --- CONTENT AREA (SAMA SEPERTI SEBELUMNYA) --- */}
+      {/* --- CONTENT AREA --- */}
       <div className="flex-1 p-4 md:p-8 pb-32 relative z-10 w-full min-h-screen">
         <div className="max-w-7xl mx-auto w-full">
 
@@ -874,7 +875,7 @@ export default function App() {
                                         value={authPassword} 
                                         onChange={e => setAuthPassword(e.target.value)}
                                     />
-                                    <Key className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                                 </div>
                             </div>
 
@@ -1380,8 +1381,8 @@ export default function App() {
            
            {/* READ ONLY FIELDS */}
            <div className="grid grid-cols-2 gap-4">
-               <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Sekolah</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={userData?.school || '-'} /></div>
-               <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Kota</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={userData?.city || '-'} /></div>
+               <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Sekolah</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={user?.school || '-'} /></div>
+               <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Kota</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={user?.city || '-'} /></div>
            </div>
 
            <div>
@@ -1457,6 +1458,7 @@ export default function App() {
                 <span className="bg-indigo-50 text-indigo-600 px-3 py-1 rounded-lg text-[10px] font-bold uppercase mb-4 inline-block">{selectedNews.category}</span>
                 <h2 className="text-2xl font-black text-slate-800 mb-4 leading-tight">{selectedNews.title}</h2>
                 <div className="text-sm text-slate-600 leading-relaxed bg-slate-50 p-6 rounded-[2rem] mb-4 border border-slate-100 font-medium whitespace-pre-line">{selectedNews.content}</div>
+                <div className="text-xs text-slate-400 font-bold text-right">Diposting: {selectedNews.date}</div>
             </div>
         )}
       </Modal>
