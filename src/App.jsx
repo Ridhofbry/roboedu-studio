@@ -11,11 +11,9 @@ import {
   Quote, Upload, Terminal
 } from 'lucide-react';
 
-// --- PRODUCTION IMPORTS ---
 import { initializeApp } from "firebase/app";
 import { 
-  getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, 
-  browserLocalPersistence, setPersistence 
+  getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged 
 } from "firebase/auth";
 import { 
   getFirestore, doc, setDoc, getDoc, updateDoc, deleteDoc, 
@@ -24,10 +22,12 @@ import {
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 /* ========================================================================
-   1. KONFIGURASI API (PRODUCTION)
+   1. KONFIGURASI API & SAFETY CHECK
    ======================================================================== */
 
-// --- FIREBASE INIT ---
+// Cek apakah API Key terbaca
+const isConfigured = import.meta.env.VITE_FIREBASE_API_KEY;
+
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -37,24 +37,24 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
-// Initialize Firebase with Error Handling
 let app, auth, db, googleProvider;
-try {
-    app = initializeApp(firebaseConfig);
-    auth = getAuth(app);
-    db = getFirestore(app);
-    googleProvider = new GoogleAuthProvider();
-    // Menggunakan persistence LOCAL untuk mengelakkan isu sesi hilang di Android
-    setPersistence(auth, browserLocalPersistence);
-} catch (error) {
-    console.warn("Firebase not initialized. Check .env variables.");
+let firebaseError = null;
+
+if (isConfigured) {
+    try {
+        app = initializeApp(firebaseConfig);
+        auth = getAuth(app);
+        db = getFirestore(app);
+        googleProvider = new GoogleAuthProvider();
+    } catch (error) {
+        console.error("Firebase Init Error:", error);
+        firebaseError = error.message;
+    }
 }
 
-// --- GEMINI INIT ---
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
 
-// --- ONESIGNAL INIT ---
 const ONESIGNAL_APP_ID = import.meta.env.VITE_ONESIGNAL_APP_ID;
 const ONESIGNAL_API_KEY = import.meta.env.VITE_ONESIGNAL_REST_API_KEY;
 
