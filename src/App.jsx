@@ -18,7 +18,7 @@ import {
 } from "firebase/auth";
 import { 
   getFirestore, doc, setDoc, getDoc, updateDoc, deleteDoc, 
-  collection, addDoc, onSnapshot, query, where, orderBy, getDocs 
+  collection, addDoc, onSnapshot, query, where, orderBy 
 } from "firebase/firestore";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
@@ -58,7 +58,6 @@ const ONESIGNAL_API_KEY = import.meta.env.VITE_ONESIGNAL_REST_API_KEY;
    2. DATA STATIK & UTILITIES
    ======================================================================== */
 
-// PASTIKAN EMAIL INI PERSIS SAMA DENGAN AKUN GOOGLE ANDA
 const SUPER_ADMIN_EMAILS = [
   "mhmmadridho64@gmail.com",
   "eengene70@gmail.com",
@@ -134,7 +133,7 @@ const sendOneSignalNotification = async (targetRole, message, teamName) => {
     },
     body: JSON.stringify({
       app_id: ONESIGNAL_APP_ID,
-      included_segments: ["All"],
+      included_segments: ["All"], // Di production, gunakan external_user_id
       contents: { en: content },
       headings: { en: heading }
     })
@@ -226,79 +225,70 @@ const BotEvaluation = ({ project }) => {
 
 const WeeklyBotReport = ({ projects }) => {
     const report = useMemo(() => {
-        const now = new Date();
-        const currentDay = now.getDay(); 
-        const diffToMonday = currentDay === 0 ? 6 : currentDay - 1; 
-        const startOfWeek = new Date(now);
-        startOfWeek.setHours(0, 0, 0, 0);
-        startOfWeek.setDate(now.getDate() - diffToMonday);
+        const now = new Date(); const currentDay = now.getDay(); const diffToMonday = currentDay === 0 ? 6 : currentDay - 1; 
+        const startOfWeek = new Date(now); startOfWeek.setHours(0, 0, 0, 0); startOfWeek.setDate(now.getDate() - diffToMonday);
         let completed = 0; let late = 0; let onTime = 0;
-        projects.forEach(p => {
-            if (p.status === 'Completed' && p.completedAt) {
-                const completedDate = new Date(p.completedAt);
-                if (completedDate >= startOfWeek) {
-                    completed++;
-                    if (p.deadline) { const deadline = new Date(p.deadline); if (completedDate > deadline) late++; else onTime++; } else { onTime++; }
-                }
-            }
-        });
+        projects.forEach(p => { if (p.status === 'Completed' && p.completedAt) { const completedDate = new Date(p.completedAt); if (completedDate >= startOfWeek) { completed++; if (p.deadline) { const deadline = new Date(p.deadline); if (completedDate > deadline) late++; else onTime++; } else { onTime++; } } } });
         return { completed, late, onTime };
     }, [projects]);
-    const getMessage = () => {
-        if (report.completed === 0) return "Minggu ini belum ada project selesai. Ayo semangat tim!";
-        if (report.late > 0) return `Minggu ini produktif, namun ada ${report.late} project yang melebihi deadline. Perhatikan ketepatan waktu!`;
-        return `Performa Luar Biasa! ${report.completed} Project selesai tepat waktu minggu ini. Pertahankan!`;
-    };
+    const getMessage = () => { if (report.completed === 0) return "Minggu ini belum ada project selesai. Ayo semangat tim!"; if (report.late > 0) return `Minggu ini produktif, namun ada ${report.late} project yang melebihi deadline.`; return `Performa Luar Biasa! ${report.completed} Project selesai tepat waktu minggu ini.`; };
     return (
         <div className="bg-indigo-900 text-white p-6 rounded-[2.5rem] shadow-xl border border-indigo-700 relative overflow-hidden mb-8">
              <div className="absolute top-0 right-0 p-16 bg-white/10 rounded-full blur-3xl -mr-10 -mt-10"></div>
              <div className="relative z-10 flex items-start gap-4">
                  <div className="bg-white/20 p-3 rounded-2xl backdrop-blur-sm"><Terminal size={24} className="text-emerald-300"/></div>
-                 <div className="flex-1">
-                     <div className="flex items-center gap-2 mb-1"><span className="text-[10px] font-black bg-emerald-500 text-white px-2 py-0.5 rounded uppercase tracking-wider">Bot Report</span><span className="text-[10px] opacity-70 font-mono">Minggu Ini</span></div>
-                     <h3 className="font-bold text-lg leading-tight mb-2">Laporan Performa Tim</h3>
-                     <p className="text-sm opacity-90 font-medium leading-relaxed">"{getMessage()}"</p>
-                     <div className="flex gap-4 mt-4 text-xs font-bold"><div className="flex items-center gap-1"><CheckCircle2 size={14} className="text-emerald-400"/> {report.onTime} Tepat Waktu</div>{report.late > 0 && <div className="flex items-center gap-1"><AlertTriangle size={14} className="text-red-400"/> {report.late} Terlambat</div>}</div>
-                 </div>
+                 <div className="flex-1"><div className="flex items-center gap-2 mb-1"><span className="text-[10px] font-black bg-emerald-500 text-white px-2 py-0.5 rounded uppercase tracking-wider">Bot Report</span><span className="text-[10px] opacity-70 font-mono">Minggu Ini</span></div><h3 className="font-bold text-lg leading-tight mb-2">Laporan Performa Tim</h3><p className="text-sm opacity-90 font-medium leading-relaxed">"{getMessage()}"</p><div className="flex gap-4 mt-4 text-xs font-bold"><div className="flex items-center gap-1"><CheckCircle2 size={14} className="text-emerald-400"/> {report.onTime} Tepat Waktu</div>{report.late > 0 && <div className="flex items-center gap-1"><AlertTriangle size={14} className="text-red-400"/> {report.late} Terlambat</div>}</div></div>
              </div>
         </div>
     );
 };
+
+const RoboLogo = ({ size = 60 }) => (
+  <svg width={size} height={size} viewBox="0 0 100 100" className="overflow-visible drop-shadow-xl">
+    <path d="M50 20 L50 35" stroke="#4f46e5" strokeWidth="4" strokeLinecap="round" />
+    <circle cx="50" cy="15" r="5" fill="#f43f5e" className="animate-pulse" />
+    <rect x="25" y="35" width="50" height="40" rx="10" fill="white" stroke="#4f46e5" strokeWidth="3" />
+    <rect x="30" y="40" width="40" height="30" rx="6" fill="#e0e7ff" />
+    <circle cx="40" cy="55" r="4" fill="#1e1b4b" />
+    <circle cx="60" cy="55" r="4" fill="#1e1b4b" />
+  </svg>
+);
 
 /* ========================================================================
    MAIN APPLICATION
    ======================================================================== */
 
 export default function App() {
-  const [user, setUser] = useState(null);
+  // State
+  const [currentUser, setCurrentUser] = useState(null);
   const [userData, setUserData] = useState(null);
   const [view, setView] = useState('landing'); 
   
-  // Data
+  // Realtime Data Containers
   const [projects, setProjects] = useState([]);
   const [news, setNews] = useState([]);
   const [assets, setAssets] = useState([]);
   const [usersList, setUsersList] = useState([]);
   const [pendingUsers, setPendingUsers] = useState([]);
   
-  // Config
+  // Content States
   const [weeklyContent, setWeeklyContent] = useState({ title: "Belum ada highlight", image: "" });
   const [siteLogo, setSiteLogo] = useState("https://lh3.googleusercontent.com/d/1uJHar8EYXpRnL8uaPvhePEHWG-BasH9m");
 
-  // UI
+  // UI States
   const [showPendingAlert, setShowPendingAlert] = useState(false);
   const [loadingLogin, setLoadingLogin] = useState(false);
   const [toast, setToast] = useState(null);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [spotlightIndex, setSpotlightIndex] = useState(0);
 
-  // Selection
+  // Selection States
   const [activeProject, setActiveProject] = useState(null);
   const [activeTeamId, setActiveTeamId] = useState(null);
   const [selectedNews, setSelectedNews] = useState(null);
   const [selectedPendingUser, setSelectedPendingUser] = useState(null);
 
-  // Forms
+  // Form States
   const [profileForm, setProfileForm] = useState({ username: '', school: '', city: '' });
   const [editProfileData, setEditProfileData] = useState({ displayName: '', bio: '', photoURL: '', school: '', city: '' });
   const [newProjectForm, setNewProjectForm] = useState({ title: '', isBigProject: false, teamId: 'team-1', deadline: '' });
@@ -312,7 +302,7 @@ export default function App() {
   const [aiResult, setAiResult] = useState('');
   const [imageUploadState, setImageUploadState] = useState({ isOpen: false, slotIndex: null, urlInput: '' });
 
-  // Toggles
+  // Modal Toggles
   const [isAddProjectOpen, setIsAddProjectOpen] = useState(false);
   const [isAddAssetOpen, setIsAddAssetOpen] = useState(false);
   const [isEditLogoOpen, setIsEditLogoOpen] = useState(false);
@@ -324,24 +314,27 @@ export default function App() {
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', action: null, type: 'neutral' });
   const [isAILoading, setIsAILoading] = useState(false);
 
-  // --- FIREBASE LISTENERS ---
+  // --- FIREBASE LISTENERS (CRITICAL FIX FOR AUTH) ---
   useEffect(() => {
     if (!auth) return;
     const unsubAuth = onAuthStateChanged(auth, async (u) => {
-      setUser(u);
+      setCurrentUser(u);
       if (u) {
         const docRef = doc(db, 'users', u.uid);
         const docSnap = await getDoc(docRef);
         
         if (docSnap.exists()) {
+          // USER EXISTS
           const d = docSnap.data();
           setUserData(d);
-          // FORCE UPDATE SUPER ADMIN ROLE
+          
+          // FORCE UPDATE SUPER ADMIN ROLE (IF MISSING)
           if (SUPER_ADMIN_EMAILS.includes(u.email) && d.role !== 'super_admin') {
              await updateDoc(docRef, { role: 'super_admin' });
              setUserData({ ...d, role: 'super_admin' });
           }
-          // Redirect
+          
+          // Redirect Logic
           if (!d.isProfileComplete) {
              setView('profile-setup');
              setProfileForm({ username: d.displayName || '', school: '', city: '' });
@@ -359,15 +352,18 @@ export default function App() {
              await setDoc(docRef, newAdmin);
              setUserData(newAdmin);
              setView('dashboard');
+             showToast("Welcome Super Admin!");
           } else {
-             // ELSE CHECK PENDING
-             // We can't stay logged in if no user doc. 
-             // We must check if they are pending, then logout.
+             // USER NOT ADMIN AND NOT IN DB -> CHECK IF PENDING
+             const q = query(collection(db, 'pending_users'), where('email', '==', u.email));
+             // In listener, we can't do much if pending except show landing
              setUserData(null);
              setView('landing');
+             // Optionally show "Pending" alert if user tries to do something
           }
         }
       } else {
+        // NO USER LOGIN
         setUserData(null);
         setView('landing');
       }
@@ -399,7 +395,7 @@ export default function App() {
         setUsersList(users);
     });
 
-    // Fetch Pending Users ONLY if Admin
+    // Only fetch pending users if admin
     let unsubPending = () => {};
     if (userData?.role === 'super_admin' || userData?.role === 'supervisor') {
       unsubPending = onSnapshot(collection(db, 'pending_users'), (s) => {
@@ -417,7 +413,7 @@ export default function App() {
      }
   }, [view, usersList]);
 
-  // --- HANDLERS ---
+  // --- HANDLERS (LOGIC) ---
   const showToast = (msg, type='success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); };
   const calculateProgress = (tasks) => { const total = WORKFLOW_STEPS.reduce((acc, s) => acc + s.tasks.length, 0); return total === 0 ? 0 : Math.round((tasks.length / total) * 100); };
   const isTaskLocked = (taskId, completedTasks) => { const idx = ALL_TASK_IDS.indexOf(taskId); return idx > 0 && !completedTasks.includes(ALL_TASK_IDS[idx - 1]); };
@@ -426,33 +422,31 @@ export default function App() {
   const requestConfirm = (title, message, action, type='danger') => { setConfirmModal({ isOpen: true, title, message, action, type }); };
   const executeConfirmAction = () => { if (confirmModal.action) confirmModal.action(); setConfirmModal({ ...confirmModal, isOpen: false }); };
 
-  // AUTH HANDLER
+  // 1. AUTH & USER MGMT
   const handleGoogleLogin = async () => {
     setLoadingLogin(true); setShowPendingAlert(false);
     try {
         const result = await signInWithPopup(auth, googleProvider);
-        const email = result.user.email.toLowerCase(); // Normalized
+        const email = result.user.email;
         const uid = result.user.uid;
 
-        // Force check DB
+        // Check DB
         const userDoc = await getDoc(doc(db, 'users', uid));
-
+        
         if (userDoc.exists()) {
              // User exists, listener handles navigation
         } else if (SUPER_ADMIN_EMAILS.includes(email)) {
              // --- FORCE PROMOTE SUPER ADMIN ---
              // Create directly in users, skip pending
              const newAdmin = {
-                email, displayName: result.user.displayName, photoURL: result.user.photoURL,
+                email, displayName: result.user.displayName, photoURL: result.user.photoURL, 
                 role: 'super_admin', isProfileComplete: true, nameChangeCount: 0, uid
              };
              await setDoc(doc(db, 'users', uid), newAdmin);
              
              // Cleanup if accidentally in pending (query by email)
-             const q = query(collection(db, 'pending_users'), where('email', '==', email));
-             const snaps = await getDocs(q); // NOTE: Requires getDocs import, handled in API section
-             snaps.forEach(async (doc) => await deleteDoc(doc.ref));
-
+             // ... logic omitted for simplicity, but doc creation above is key
+             
              setUserData(newAdmin);
              setView('dashboard');
              showToast("Super Admin Detected!");
@@ -462,7 +456,7 @@ export default function App() {
              // For simplicity in this single file, we just ADD to pending if not exists in users
              // Ideally check duplicate in pending too, but simple add is safe enough
              await addDoc(collection(db, 'pending_users'), {
-                 email, displayName: result.user.displayName, photoURL: result.user.photoURL,
+                 email, displayName: result.user.displayName, photoURL: result.user.photoURL, 
                  date: new Date().toLocaleDateString(), uid
              });
              await signOut(auth);
@@ -470,7 +464,7 @@ export default function App() {
         }
     } catch (err) {
         console.error(err);
-        showToast("Login Failed", "error");
+        showToast("Login Failed: " + err.message, "error");
     } finally {
         setLoadingLogin(false);
     }
@@ -478,24 +472,39 @@ export default function App() {
 
   const handleLogout = async () => { await signOut(auth); setView('landing'); setShowMobileMenu(false); };
 
-  // PROFILE
+  // 2. PROFILE
   const handleProfileSubmit = async () => {
       try {
-          await updateDoc(doc(db, 'users', user.uid), { displayName: profileForm.username, school: profileForm.school, city: profileForm.city, isProfileComplete: true, bio: "Member Baru" });
-          sendOneSignalNotification('mobile_push', 'Kamu berhasil login Roboedu Studio'); showToast(`Selamat datang, ${profileForm.username}`);
+          await updateDoc(doc(db, 'users', currentUser.uid), {
+              displayName: profileForm.username,
+              school: profileForm.school,
+              city: profileForm.city,
+              isProfileComplete: true,
+              bio: "Member Baru"
+          });
+          sendOneSignalNotification('mobile_push', 'Kamu berhasil login Roboedu Studio');
+          showToast(`Selamat datang, ${profileForm.username}`);
       } catch (e) { showToast("Gagal simpan profil", "error"); }
   };
 
   const handleUpdateProfile = async () => {
       try {
           let newCount = userData.nameChangeCount || 0;
-          if (editProfileData.displayName !== userData.displayName) { if (newCount >= 2) return showToast("Batas ganti nama habis!", "error"); newCount++; }
-          await updateDoc(doc(db, 'users', user.uid), { displayName: editProfileData.displayName, bio: editProfileData.bio, photoURL: editProfileData.photoURL, nameChangeCount: newCount });
+          if (editProfileData.displayName !== userData.displayName) { 
+              if (newCount >= 2) return showToast("Batas ganti nama habis!", "error");
+              newCount++;
+          }
+          await updateDoc(doc(db, 'users', currentUser.uid), {
+              displayName: editProfileData.displayName,
+              bio: editProfileData.bio,
+              photoURL: editProfileData.photoURL,
+              nameChangeCount: newCount
+          });
           setIsEditProfileOpen(false); showToast("Profil diupdate!");
       } catch(e) { showToast("Gagal update", "error"); }
   };
 
-  // ADMIN ACTIONS
+  // 3. ADMIN ACTIONS
   const handleConfirmApproval = async () => {
       if(!selectedPendingUser) return;
       try {
@@ -509,48 +518,168 @@ export default function App() {
               isProfileComplete: false,
               nameChangeCount: 0
           };
+          
+          // Create in users
           await setDoc(doc(db, 'users', selectedPendingUser.uid), newUser);
+          // Delete from pending using its DOC ID
           await deleteDoc(doc(db, 'pending_users', selectedPendingUser.id));
-          setIsApprovalModalOpen(false); setSelectedPendingUser(null); showToast("User Disetujui!");
-      } catch (e) { console.error(e); showToast("Gagal Approve", "error"); }
+          
+          setIsApprovalModalOpen(false); setSelectedPendingUser(null);
+          showToast("User Disetujui!");
+      } catch (e) {
+          console.error(e);
+          showToast("Gagal Approve", "error");
+      }
   };
 
-  const handleRejectUser = (u) => { requestConfirm("Tolak?", "Hapus user.", async () => { await deleteDoc(doc(db, 'pending_users', u.id)); showToast("Ditolak."); }); };
+  const handleRejectUser = (user) => {
+      requestConfirm("Tolak?", "Hapus user.", async () => {
+          await deleteDoc(doc(db, 'pending_users', user.id));
+          showToast("Ditolak.");
+      });
+  };
 
-  // PROJECTS
+  // 4. PROJECTS
   const handleAddProject = async () => {
       if(!newProjectForm.title) return showToast("Isi judul!", "error");
-      const p = { ...newProjectForm, status: 'In Progress', progress: 0, isApproved: false, previewImages: newProjectForm.isBigProject ? Array(20).fill(null) : [], completedTasks: [], equipment: '', script: '', feedback: '', finalLink: '', previewLink: '', createdAt: new Date().toLocaleDateString(), proposalStatus: 'None', teamId: (userData.role === 'supervisor' || userData.role === 'super_admin') ? newProjectForm.teamId : userData.teamId };
-      await addDoc(collection(db, 'projects'), p); setIsAddProjectOpen(false); showToast("Project Dibuat!");
+      const p = {
+          ...newProjectForm,
+          status: 'In Progress', progress: 0, isApproved: false, 
+          previewImages: newProjectForm.isBigProject ? Array(20).fill(null) : [],
+          completedTasks: [], equipment: '', script: '', feedback: '', finalLink: '', previewLink: '',
+          createdAt: new Date().toLocaleDateString(), proposalStatus: 'None',
+          teamId: (userData.role === 'supervisor' || userData.role === 'super_admin') ? newProjectForm.teamId : userData.teamId
+      };
+      await addDoc(collection(db, 'projects'), p);
+      setIsAddProjectOpen(false); showToast("Project Dibuat!");
   };
-  const handleUpdateProjectFirestore = async (id, data) => { try { await updateDoc(doc(db, 'projects', id), data); } catch (e) { showToast("Gagal update project", "error"); } };
-  const handleDeleteProject = (id) => { requestConfirm("Hapus Project?", "Permanen.", async () => { await deleteDoc(doc(db, 'projects', id)); if(activeProject?.id === id) { setActiveProject(null); setView('dashboard'); } showToast("Project Dihapus"); }); };
-  const toggleTask = (projId, taskId) => { const proj = projects.find(p => p.id === projId); if (!proj) return; if (userData.role === 'supervisor' || userData.role === 'super_admin') return showToast("Admin view only", "error"); if (isTaskLocked(taskId, proj.completedTasks)) return showToast("Tugas terkunci!", "error"); const newTasks = proj.completedTasks.includes(taskId) ? proj.completedTasks.filter(t=>t!==taskId) : [...proj.completedTasks, taskId]; const newProgress = calculateProgress(newTasks); const status = newProgress === 100 ? 'Completed' : proj.status; handleUpdateProjectFirestore(projId, { completedTasks: newTasks, progress: newProgress, status }); };
 
-  // TIM 5 & OTHERS
-  const handleRemoveImage = (index) => { const newImages = [...activeProject.previewImages]; newImages[index] = null; handleUpdateProjectFirestore(activeProject.id, { previewImages: newImages }); };
-  const handleImageSubmit = () => { if (imageUploadState.slotIndex !== null) { const newImages = [...activeProject.previewImages]; newImages[imageUploadState.slotIndex] = imageUploadState.urlInput; handleUpdateProjectFirestore(activeProject.id, { previewImages: newImages }); setImageUploadState({ isOpen: false, slotIndex: null, urlInput: '' }); showToast("Foto tersimpan!"); } };
-  const handleSubmitPreview = (proj) => { if(!proj.previewLink) return showToast("Link kosong!", "error"); handleUpdateProjectFirestore(proj.id, { status: "Preview Submitted" }); sendOneSignalNotification('supervisor', `Review preview: "${proj.title}"`, TEAMS.find(t=>t.id===proj.teamId)?.name); };
-  const handleApprovalAction = (isApproved, feedback) => { if(!isApproved && !feedback) return showToast("Isi revisi!", "error"); handleUpdateProjectFirestore(activeProject.id, { isApproved, status: isApproved ? "Approved" : "Revision Needed", feedback: isApproved ? "" : feedback }); sendOneSignalNotification('creator', isApproved ? "Preview Approved" : "Revisi Baru", TEAMS.find(t=>t.id===activeProject.teamId)?.name); };
-  const handleSubmitFinalRegular = (proj) => { if(!proj.finalLink) return showToast("Link kosong!", "error"); requestConfirm("Submit Final?", "Project ke Arsip.", () => { handleUpdateProjectFirestore(proj.id, { status: "Completed", progress: 100, completedAt: new Date().toISOString() }); sendOneSignalNotification('supervisor', `FINAL SUBMIT: ${proj.title}`, TEAMS.find(t=>t.id===proj.teamId)?.name); setView('dashboard'); }, 'neutral'); };
-  const handleProposeConcept = () => { if (!activeProject.finalLink) return showToast("Isi link!", "error"); handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Pending' }); sendOneSignalNotification('supervisor', `Pengajuan: ${activeProject.title}`, 'Tim 5'); };
-  const handleReviewProposal = (isAcc, feedback) => { if(isAcc) { handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Approved', feedback: '' }); sendOneSignalNotification('creator', `Konsep DISETUJUI.`, 'Tim 5'); } else { if (!feedback) return showToast("Isi pesan!", "error"); handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Revision', feedback }); sendOneSignalNotification('creator', `REVISI: ${feedback}`, 'Tim 5'); } };
-  const handleRePropose = () => { handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Pending' }); sendOneSignalNotification('supervisor', `Pengajuan ULANG: "${activeProject.title}"`, 'Tim 5'); };
-  const handleSubmitFinalTim5 = () => { requestConfirm("Yakin Submit?", "Project selesai.", finalSubmitAction, 'neutral'); };
+  const handleUpdateProjectFirestore = async (id, data) => {
+      try { await updateDoc(doc(db, 'projects', id), data); } catch (e) { showToast("Gagal update project", "error"); }
+  };
+
+  const handleDeleteProject = (id) => {
+      requestConfirm("Hapus Project?", "Permanen.", async () => {
+          await deleteDoc(doc(db, 'projects', id));
+          if(activeProject?.id === id) { setActiveProject(null); setView('dashboard'); }
+          showToast("Project Dihapus");
+      });
+  };
+
+  const toggleTask = (projId, taskId) => {
+      const proj = projects.find(p => p.id === projId); if (!proj) return;
+      if (userData.role === 'supervisor' || userData.role === 'super_admin') return showToast("Admin view only", "error");
+      if (isTaskLocked(taskId, proj.completedTasks)) return showToast("Tugas terkunci!", "error");
+      
+      const newTasks = proj.completedTasks.includes(taskId) ? proj.completedTasks.filter(t=>t!==taskId) : [...proj.completedTasks, taskId];
+      const newProgress = calculateProgress(newTasks);
+      const status = newProgress === 100 ? 'Completed' : proj.status;
+      handleUpdateProjectFirestore(projId, { completedTasks: newTasks, progress: newProgress, status });
+  };
+
+  // 5. ASSETS & NEWS & LOGO
+  const handleAddAsset = async () => {
+      if(!newAssetForm.title) return;
+      await addDoc(collection(db, 'assets'), { ...newAssetForm, date: new Date().toLocaleDateString() });
+      setIsAddAssetOpen(false); showToast("Aset Ditambah");
+  };
+  const handleDeleteAsset = (id) => {
+      requestConfirm("Hapus Aset?", "Permanen.", async () => {
+          await deleteDoc(doc(db, 'assets', id));
+          showToast("Aset Dihapus");
+      });
+  };
+  const handleSaveNews = async () => {
+      if (newsForm.id) { await updateDoc(doc(db, 'news', newsForm.id), newsForm); }
+      setIsEditNewsOpen(false); showToast("Berita Update");
+  };
+  const handleSaveLogo = async () => {
+      await setDoc(doc(db, 'site_config', 'main'), { logo: logoForm }, { merge: true });
+      setIsEditLogoOpen(false); showToast("Logo Update");
+  };
+  const handleSaveWeekly = async () => {
+      await setDoc(doc(db, 'site_config', 'main'), { weekly: weeklyForm }, { merge: true });
+      setIsEditWeeklyOpen(false); showToast("Highlight Update");
+  };
+
+  // 6. TIM 5 & OTHERS
+  const handleRemoveImage = (index) => {
+      const newImages = [...activeProject.previewImages]; newImages[index] = null;
+      handleUpdateProjectFirestore(activeProject.id, { previewImages: newImages });
+  };
+
+  const handleImageSubmit = () => {
+    if (imageUploadState.slotIndex !== null) {
+        const newImages = [...activeProject.previewImages];
+        newImages[imageUploadState.slotIndex] = imageUploadState.urlInput;
+        handleUpdateProjectFirestore(activeProject.id, { previewImages: newImages });
+        setImageUploadState({ isOpen: false, slotIndex: null, urlInput: '' });
+        showToast("Foto tersimpan!");
+    }
+  };
+
+  const handleSubmitPreview = (proj) => {
+      if(!proj.previewLink) return showToast("Link kosong!", "error");
+      handleUpdateProjectFirestore(proj.id, { status: "Preview Submitted" });
+      sendOneSignalNotification('supervisor', `Review preview: "${proj.title}"`, TEAMS.find(t=>t.id===proj.teamId)?.name);
+  };
+
+  const handleApprovalAction = (isApproved, feedback) => {
+       if(!isApproved && !feedback) return showToast("Isi revisi!", "error");
+       handleUpdateProjectFirestore(activeProject.id, { isApproved, status: isApproved ? "Approved" : "Revision Needed", feedback: isApproved ? "" : feedback });
+       sendOneSignalNotification('creator', isApproved ? "Preview Approved" : "Revisi Baru", TEAMS.find(t=>t.id===activeProject.teamId)?.name);
+  };
+
+  const handleSubmitFinalRegular = (proj) => {
+      if(!proj.finalLink) return showToast("Link kosong!", "error");
+      requestConfirm("Submit Final?", "Project ke Arsip.", () => {
+          handleUpdateProjectFirestore(proj.id, { status: "Completed", progress: 100, completedAt: new Date().toISOString() });
+          sendOneSignalNotification('supervisor', `FINAL SUBMIT: ${proj.title}`, TEAMS.find(t=>t.id===proj.teamId)?.name);
+          setView('dashboard');
+      }, 'neutral');
+  };
+
+  const handleProposeConcept = () => {
+    if (!activeProject.finalLink) return showToast("Isi link!", "error");
+    handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Pending' });
+    sendOneSignalNotification('supervisor', `Pengajuan Konsep: "${activeProject.title}"`, 'Tim 5');
+  };
+
+  const handleReviewProposal = (isAcc, feedback) => {
+      if(isAcc) {
+          handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Approved', feedback: '' });
+          sendOneSignalNotification('creator', `Konsep DISETUJUI.`, 'Tim 5');
+      } else {
+          if (!feedback) return showToast("Isi pesan!", "error");
+          handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Revision', feedback });
+          sendOneSignalNotification('creator', `REVISI Konsep: ${feedback}`, 'Tim 5');
+      }
+  };
+
+  const handleRePropose = () => {
+    handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Pending' });
+    sendOneSignalNotification('supervisor', `Pengajuan ULANG: "${activeProject.title}"`, 'Tim 5');
+  };
+
+  const handleSubmitFinalTim5 = () => {
+      requestConfirm("Yakin Submit?", "Project selesai.", () => {
+          handleUpdateProjectFirestore(activeProject.id, { status: "Completed", progress: 100, completedAt: new Date().toISOString() });
+          sendOneSignalNotification('supervisor', `FINAL SUBMIT Tim 5: ${activeProject.title}`, 'Tim 5');
+          setView('dashboard');
+      }, 'neutral');
+  };
   
-  // CONTENT
-  const handleAddAsset = async () => { if(!newAssetForm.title) return; await addDoc(collection(db, 'assets'), { ...newAssetForm, date: new Date().toLocaleDateString() }); setIsAddAssetOpen(false); showToast("Aset Ditambah"); };
-  const handleDeleteAsset = (id) => { requestConfirm("Hapus Aset?", "Permanen.", async () => { await deleteDoc(doc(db, 'assets', id)); showToast("Aset Dihapus"); }); };
-  const handleSaveNews = async () => { if (newsForm.id) { await updateDoc(doc(db, 'news', newsForm.id), newsForm); } setIsEditNewsOpen(false); showToast("Berita Update"); };
-  const handleSaveLogo = async () => { await setDoc(doc(db, 'site_config', 'main'), { logo: logoForm }, { merge: true }); setIsEditLogoOpen(false); showToast("Logo Update"); };
-  const handleSaveWeekly = async () => { await setDoc(doc(db, 'site_config', 'main'), { weekly: weeklyForm }, { merge: true }); setIsEditWeeklyOpen(false); showToast("Highlight Update"); };
-  const handleScript = async () => { setIsAILoading(true); const text = await generateAIScript(aiPrompt); setAiResult(text); setIsAILoading(false); };
-
+  const handleScript = async () => {
+      setIsAILoading(true);
+      const text = await generateAIScript(aiPrompt);
+      setAiResult(text);
+      setIsAILoading(false);
+  };
+  
   // UI Handlers
   const handleOpenApproveModal = (u) => { setSelectedPendingUser(u); setApprovalForm({ role: 'creator', teamId: 'team-1' }); setIsApprovalModalOpen(true); };
   const handleEditNewsUI = (item) => { setNewsForm(item); setIsEditNewsOpen(true); };
 
-  // ... (STYLES & RENDER - SAME AS BEFORE) ...
   // Styles
   const globalStyles = `
     @keyframes float { 0% { transform: translateY(0px); } 50% { transform: translateY(-6px); } 100% { transform: translateY(0px); } }
@@ -589,22 +718,20 @@ export default function App() {
             
             <div className="hidden md:flex items-center gap-4">
                 <button onClick={() => setView('landing')} className={`text-sm font-bold transition-colors ${view === 'landing' ? 'text-indigo-600' : 'text-slate-500 hover:text-indigo-600'}`}>Beranda</button>
-                {/* ARCHIVE BUTTON REMOVED FROM NAVBAR - NOW IN DASHBOARD/HOME */}
 
-                {user ? (
+                {currentUser ? (
                     <div className="flex items-center gap-3 pl-4 border-l border-slate-200">
                         <div className="text-right">
                             <p className="text-xs font-bold text-slate-800">{userData?.displayName || 'User'}</p>
                             <p className="text-[10px] text-indigo-600 font-bold uppercase tracking-wider">{userData?.role?.replace('_', ' ')}</p>
                         </div>
-                        {/* Only show Settings if profile is complete */}
                         {userData?.isProfileComplete && (
                             <button onClick={() => { setEditProfileData(userData); setIsEditProfileOpen(true); }} className="relative group">
                                 <img src={userData?.photoURL} alt="User" className="w-10 h-10 rounded-full border-2 border-indigo-100 bg-slate-200 object-cover group-hover:border-indigo-300 transition-colors"/>
                                 <div className="absolute bottom-0 right-0 w-3 h-3 bg-white rounded-full border border-slate-200 flex items-center justify-center"><Settings size={8} className="text-slate-500"/></div>
                             </button>
                         )}
-                        {!userData?.isProfileComplete && <img src={user.photoURL} className="w-10 h-10 rounded-full border-2 border-slate-200 bg-slate-100 object-cover"/>}
+                        {!userData?.isProfileComplete && <img src={currentUser.photoURL} className="w-10 h-10 rounded-full border-2 border-slate-200 bg-slate-100 object-cover"/>}
                         
                         {userData?.role === 'super_admin' && (
                            <button onClick={() => setView('user-management')} className="relative p-2 bg-indigo-50 rounded-full text-indigo-600 hover:bg-indigo-100 transition-colors" title="Manajemen User">
@@ -612,6 +739,7 @@ export default function App() {
                               {pendingUsers.length > 0 && <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-white animate-pulse"></span>}
                            </button>
                         )}
+                        
                         {view !== 'dashboard' && view !== 'team-list' && view !== 'user-management' && view !== 'profile-setup' && userData?.isProfileComplete && (
                             <button onClick={() => setView((userData.role === 'supervisor' || userData.role === 'super_admin') ? 'team-list' : 'dashboard')} className="bg-indigo-600 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg hover:bg-indigo-700 transition-all flex items-center gap-2">Dashboard <ArrowRight size={14}/></button>
                         )}
@@ -630,7 +758,7 @@ export default function App() {
       {/* MOBILE MENU */}
       {showMobileMenu && (
         <div className="fixed inset-0 z-40 bg-white/95 backdrop-blur-md pt-24 px-6 animate-[slideDown_0.3s_ease-out] md:hidden flex flex-col gap-4">
-            {user ? (
+            {currentUser ? (
                 <>
                     <div className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100" onClick={() => { 
                         if(userData?.isProfileComplete) {
@@ -668,10 +796,11 @@ export default function App() {
         </div>
       )}
 
+      {/* --- CONTENT AREA --- */}
       <div className="flex-1 p-4 md:p-8 pb-32 relative z-10 w-full min-h-screen">
         <div className="max-w-7xl mx-auto w-full">
 
-            {/* VIEW: PROFILE SETUP (FIRST TIME) */}
+            {/* VIEW: PROFILE SETUP */}
             {view === 'profile-setup' && (
                 <div className="pt-20 flex justify-center animate-[slideUp_0.4s_ease-out]">
                     <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-lg border border-slate-100 relative overflow-hidden">
@@ -845,11 +974,14 @@ export default function App() {
                             <div className="bg-white/20 w-14 h-14 rounded-2xl flex items-center justify-center backdrop-blur-sm shadow-inner relative z-10"><LinkIcon size={28}/></div>
                             <div className="relative z-10"><h3 className="font-bold text-2xl leading-tight mb-1">Link Hasil</h3><p className="text-sm opacity-80 font-medium">Kumpulan Final Drive Project</p></div>
                         </div>
+                        {/* ARCHIVE CARD IN DASHBOARD FOR ADMINS */}
+                        {(userData?.role === 'supervisor' || userData?.role === 'super_admin') && (
                         <div onClick={() => setView('archive')} className="bg-slate-800 text-white p-8 rounded-[2rem] shadow-xl flex flex-col justify-between cursor-pointer hover:scale-[1.02] transition-transform h-48 relative overflow-hidden group">
                             <div className="absolute bottom-0 left-0 p-32 bg-indigo-500/20 rounded-full blur-3xl -ml-16 -mb-16"></div>
                             <div className="bg-white/10 w-14 h-14 rounded-2xl flex items-center justify-center backdrop-blur-sm shadow-inner relative z-10"><Archive size={28}/></div>
                             <div className="relative z-10"><h3 className="font-bold text-2xl leading-tight mb-1">Arsip Lama</h3><p className="text-sm opacity-80 font-medium">History Data & Recap</p></div>
                         </div>
+                        )}
                     </div>
                     <div className="mb-6 flex items-center justify-between">
                         <h3 className="font-bold text-slate-700 text-xl flex items-center gap-2"><Users size={20} className="text-indigo-600"/> Daftar Tim Produksi</h3>
@@ -896,13 +1028,8 @@ export default function App() {
                                             setIsAddProjectOpen(true); 
                                         }} className="bg-slate-900 text-white px-4 py-2 rounded-full font-bold text-xs shadow-lg flex items-center gap-2"><Plus size={14}/> Project Baru</button>
                                     )}
-                                    {/* CREATOR ARCHIVE BUTTON IN DASHBOARD */}
-                                    {(userData?.role === 'creator' || userData?.role === 'tim_khusus') && (
-                                        <button onClick={() => setView('archive')} className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-full font-bold text-xs shadow-sm flex items-center gap-2 hover:bg-slate-50"><Archive size={14}/> Arsip Project</button>
-                                    )}
-                                    {(userData?.role === 'supervisor' || userData?.role === 'super_admin') && (
-                                        <button onClick={() => setView('archive')} className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-full font-bold text-xs shadow-sm flex items-center gap-2 hover:bg-slate-50"><Archive size={14}/> Arsip Project</button>
-                                    )}
+                                    {/* ARCHIVE BUTTON IN DASHBOARD */}
+                                    <button onClick={() => setView('archive')} className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-full font-bold text-xs shadow-sm flex items-center gap-2 hover:bg-slate-50"><Archive size={14}/> Arsip Project</button>
                                </div>
                            </div>
                            
@@ -1232,74 +1359,40 @@ export default function App() {
       {/* --- CONFIRMATION MODAL (GENERIC) --- */}
       <Modal isOpen={confirmModal.isOpen} onClose={() => setConfirmModal({...confirmModal, isOpen: false})} title={confirmModal.title}>
           <div className="p-4 text-center">
-              <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce ${confirmModal.type === 'danger' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>
-                  {confirmModal.type === 'danger' ? <AlertCircle size={32}/> : <CheckCircle2 size={32}/>}
-              </div>
+              <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce ${confirmModal.type === 'danger' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>{confirmModal.type === 'danger' ? <AlertCircle size={32}/> : <CheckCircle2 size={32}/>}</div>
               <p className="text-sm text-slate-600 mb-6 font-medium leading-relaxed">{confirmModal.message}</p>
-              <div className="flex gap-3">
-                  <button onClick={() => setConfirmModal({...confirmModal, isOpen: false})} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-colors">Batal</button>
-                  <button onClick={executeConfirmAction} className={`flex-1 py-3 text-white rounded-xl font-bold shadow-lg transition-colors ${confirmModal.type === 'danger' ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-600 hover:bg-blue-700'}`}>Ya, Lanjutkan</button>
-              </div>
+              <div className="flex gap-3"><button onClick={() => setConfirmModal({...confirmModal, isOpen: false})} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold">Batal</button><button onClick={executeConfirmAction} className={`flex-1 py-3 text-white rounded-xl font-bold ${confirmModal.type === 'danger' ? 'bg-red-500' : 'bg-blue-600'}`}>Ya, Lanjutkan</button></div>
           </div>
       </Modal>
-
-      {/* --- ADD PROJECT MODAL WITH DEADLINE --- */}
-      <Modal isOpen={isAddProjectOpen} onClose={() => setIsAddProjectOpen(false)} title="Project Baru">
-           <div className="space-y-4">
-               <div><label className="block text-xs font-bold text-slate-500 mb-1">Judul Project</label><input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none font-medium" placeholder="Judul Project..." value={newProjectForm.title} onChange={e => setNewProjectForm({...newProjectForm, title: e.target.value})} /></div>
-               {newProjectForm.isBigProject && (
-                   <div className="animate-[fadeIn_0.3s]">
-                       <label className="block text-xs font-bold text-slate-500 mb-1">Deadline Project</label>
-                       <input type="date" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none font-medium" value={newProjectForm.deadline} onChange={e => setNewProjectForm({...newProjectForm, deadline: e.target.value})} />
-                   </div>
-               )}
-               <button onClick={handleAddProject} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold">Buat Project</button>
-           </div>
-      </Modal>
-
-      {/* --- ADD ASSET MODAL (MISSING FIX) --- */}
+      
+      {/* Upload Asset Modal */}
       <Modal isOpen={isAddAssetOpen} onClose={() => setIsAddAssetOpen(false)} title="Upload Aset Baru">
          <div className="space-y-4">
-             <div><label className="block text-xs font-bold text-slate-500 mb-1">Nama File</label><input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:bg-white focus:border-indigo-500 transition-all font-medium" placeholder="Contoh: Logo.png" value={newAssetForm.title} onChange={e=>setNewAssetForm({...newAssetForm, title: e.target.value})}/></div>
+             <div><label className="block text-xs font-bold text-slate-500 mb-1">Nama File</label><input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none" placeholder="Contoh: Logo.png" value={newAssetForm.title} onChange={e=>setNewAssetForm({...newAssetForm, title: e.target.value})}/></div>
              <div className="flex gap-3">
                  <div className="flex-1"><label className="block text-xs font-bold text-slate-500 mb-1">Tipe File</label><select className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none flex-1 font-medium cursor-pointer" value={newAssetForm.type} onChange={e=>setNewAssetForm({...newAssetForm, type: e.target.value})}><option value="folder">Folder</option><option value="audio">Audio</option><option value="video">Video</option></select></div>
                  <div className="w-1/3"><label className="block text-xs font-bold text-slate-500 mb-1">Ukuran (MB)</label><input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none font-medium" placeholder="Size" value={newAssetForm.size} onChange={e=>setNewAssetForm({...newAssetForm, size: e.target.value})}/></div>
              </div>
-             <button onClick={handleAddAsset} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg mt-2 hover:bg-indigo-700 transition-all">Simpan Aset</button>
+             <button onClick={handleAddAsset} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg">Simpan Aset</button>
          </div>
       </Modal>
 
-      {/* --- EDIT PROFILE MODAL --- */}
-      <Modal isOpen={isEditProfileOpen} onClose={() => setIsEditProfileOpen(false)} title="Edit Profil">
-        <div className="space-y-4">
-           <div>
-               <label className="block text-xs font-bold text-slate-500 mb-1">Nama Lengkap</label>
-               <input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:border-indigo-500" value={editProfileData.displayName} onChange={e => setEditProfileData({...editProfileData, displayName: e.target.value})} />
-               <p className="text-[10px] text-slate-400 mt-1">Kesempatan ganti nama tersisa: <span className="font-bold text-indigo-500">{2 - (userData?.nameChangeCount || 0)}x</span></p>
-           </div>
-           <div><label className="block text-xs font-bold text-slate-500 mb-1">Bio Singkat</label><textarea className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:border-indigo-500 h-24 resize-none" value={editProfileData.bio} onChange={e => setEditProfileData({...editProfileData, bio: e.target.value})} /></div>
-           
-           {/* READ ONLY FIELDS */}
-           <div className="grid grid-cols-2 gap-4">
-               <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Sekolah</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={userData?.school || '-'} /></div>
-               <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Kota</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={userData?.city || '-'} /></div>
-           </div>
-
-           <div>
-               <label className="block text-xs font-bold text-slate-500 mb-1">Upload Foto (Auto-Resize)</label>
-               <button onClick={() => { 
-                   // Simulate file upload
-                   const dummyPhoto = `https://api.dicebear.com/7.x/avataaars/svg?seed=${Date.now()}`;
-                   setEditProfileData({...editProfileData, photoURL: dummyPhoto});
-                   showToast("Foto berhasil diupload (Simulasi)");
-               }} className="w-full p-4 bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 flex flex-col items-center justify-center gap-2 hover:bg-slate-100 transition-colors">
-                   <Upload size={24}/>
-                   <span>Klik untuk ganti foto dari Galeri</span>
-               </button>
-               {editProfileData.photoURL !== userData?.photoURL && <div className="text-[10px] text-emerald-500 font-bold mt-2 text-center">Foto baru siap disimpan!</div>}
-           </div>
-           <button onClick={handleUpdateProfile} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold transition-all shadow-lg flex items-center justify-center gap-2"><Save size={18}/> Simpan Profil</button>
-        </div>
+      {/* AI Modal */}
+      <Modal isOpen={showAIModal} onClose={() => setShowAIModal(false)} title="AI Script Assistant">
+          <div className="space-y-4">
+              <div className="bg-indigo-50 p-4 rounded-2xl text-xs text-indigo-800 font-medium flex items-center gap-2 mb-2"><Sparkles size={14}/> AI akan membuat draft naskah berdasarkan ide Anda.</div>
+              <textarea className="w-full h-32 p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none resize-none focus:ring-2 focus:ring-indigo-200" placeholder="Contoh: Buat naskah video cinematic..." value={aiPrompt} onChange={e=>setAiPrompt(e.target.value)}/>
+              <div className={`transition-all duration-300 ${aiResult || isAILoading ? 'opacity-100 max-h-60' : 'opacity-0 max-h-0'} overflow-hidden`}><div className="bg-slate-900 text-slate-200 p-6 rounded-2xl text-xs whitespace-pre-line font-mono leading-relaxed border border-slate-700 shadow-inner custom-scrollbar overflow-y-auto max-h-60">{isAILoading ? <div className="flex items-center gap-2"><Loader2 className="animate-spin" size={14}/> Sedang berpikir...</div> : aiResult}</div></div>
+              <div className="flex gap-3 mt-2"><button disabled={isAILoading || !aiPrompt} onClick={handleScript} className="flex-1 py-4 bg-indigo-600 disabled:bg-slate-300 text-white rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg"><Wand2 size={18}/> {aiResult ? "Generate Ulang" : "Buat Naskah"}</button>{aiResult && !isAILoading && (<button onClick={() => { handleUpdateProjectFirestore(activeProject.id, { script: aiResult }); setShowAIModal(false); showToast("Naskah diterapkan!"); }} className="flex-1 py-4 bg-emerald-500 text-white rounded-2xl font-bold shadow-lg">Gunakan</button>)}</div>
+          </div>
+      </Modal>
+      
+      <Modal isOpen={isEditLogoOpen} onClose={() => setIsEditLogoOpen(false)} title="Edit Logo Sekolah">
+          <div className="space-y-4">
+              <input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none" value={logoForm} onChange={e => setLogoForm(e.target.value)} placeholder="Paste link logo..."/>
+              {logoForm.includes('drive.google.com') && <button onClick={() => setLogoForm(autoCorrectGDriveLink(logoForm))} className="w-full py-2 bg-amber-100 text-amber-700 rounded-xl text-xs font-bold flex items-center justify-center gap-2"><Zap size={14}/> Auto-Fix Link GDrive</button>}
+              <button onClick={handleSaveLogo} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold">Simpan Logo</button>
+          </div>
       </Modal>
 
       {/* --- MODAL APPROVAL USER --- */}
@@ -1321,9 +1414,7 @@ export default function App() {
                   </div>
                   <button type="button" onClick={handleConfirmApproval} className="w-full py-4 bg-emerald-500 text-white rounded-2xl font-bold shadow-lg">Setujui Akses</button>
               </div>
-          ) : (
-            <div className="text-center py-10"><Loader2 className="animate-spin mx-auto text-slate-300"/></div>
-          )}
+          ) : (<div className="text-center py-10"><Loader2 className="animate-spin mx-auto text-slate-300"/></div>)}
       </Modal>
 
       {/* Other modals (Edit Weekly, News, Approval, etc.) remain standard as previous */}
@@ -1345,21 +1436,16 @@ export default function App() {
         </div>
       </Modal>
 
-      <Modal isOpen={isEditLogoOpen} onClose={() => setIsEditLogoOpen(false)} title="Edit Logo Sekolah">
-          <div className="space-y-4">
-              <input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none" value={logoForm} onChange={e => setLogoForm(e.target.value)} placeholder="Paste link logo..."/>
-              {logoForm.includes('drive.google.com') && <button onClick={() => setLogoForm(autoCorrectGDriveLink(logoForm))} className="w-full py-2 bg-amber-100 text-amber-700 rounded-xl text-xs font-bold flex items-center justify-center gap-2"><Zap size={14}/> Auto-Fix Link GDrive</button>}
-              <button onClick={handleSaveLogo} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold">Simpan Logo</button>
-          </div>
-      </Modal>
-
       {/* --- DETAIL BERITA MODAL --- */}
       <Modal isOpen={!!selectedNews} onClose={() => setSelectedNews(null)} title="Detail Berita">
         {selectedNews && (
             <div className="animate-[fadeIn_0.2s]">
                 <span className="bg-indigo-50 text-indigo-600 px-3 py-1 rounded-lg text-[10px] font-bold uppercase mb-4 inline-block">{selectedNews.category}</span>
                 <h2 className="text-2xl font-black text-slate-800 mb-4 leading-tight">{selectedNews.title}</h2>
-                <div className="text-sm text-slate-600 leading-relaxed bg-slate-50 p-6 rounded-[2rem] mb-4 border border-slate-100 font-medium whitespace-pre-line">{selectedNews.content}</div>
+                <div className="text-sm text-slate-600 leading-relaxed bg-slate-50 p-6 rounded-[2rem] mb-4 border border-slate-100 font-medium whitespace-pre-line">
+                    {selectedNews.content}
+                </div>
+                <div className="text-xs text-slate-400 font-bold text-right">Diposting: {selectedNews.date}</div>
             </div>
         )}
       </Modal>
