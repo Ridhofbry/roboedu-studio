@@ -1057,13 +1057,27 @@ export default function App() {
                             />
 
                             <div className="grid md:grid-cols-2 gap-4 mt-6">
-                                {projects.filter(p => p.status !== 'Completed' && (p.teamId === userData?.teamId || userData?.role === 'supervisor' || userData?.role === 'super_admin')).map(p => (
-                                    <div key={p.id} onClick={() => { setActiveProject(p); setView('project-detail'); }} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-lg cursor-pointer transition-all">
-                                        <div className="flex justify-between mb-4"><span className="text-[10px] font-bold bg-slate-100 px-2 py-1 rounded text-slate-600">{p.status}</span></div>
-                                        <h3 className="font-bold text-xl mb-4 text-slate-800">{p.title}</h3>
-                                        <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden"><div className="h-full bg-indigo-500" style={{ width: `${p.progress}%` }}></div></div>
-                                    </div>
-                                ))}
+                                {projects
+                                    .filter(p => {
+                                        // Filter 1: Exclude completed
+                                        if (p.status === 'Completed') return false;
+
+                                        // Filter 2: Team-based access
+                                        if (userData?.role === 'supervisor' || userData?.role === 'super_admin') {
+                                            // Admin/Supervisor: If activeTeamId selected, show only that team
+                                            return activeTeamId ? (p.teamId === activeTeamId) : true;
+                                        } else {
+                                            // Creator: Show only own team
+                                            return p.teamId === userData?.teamId;
+                                        }
+                                    })
+                                    .map(p => (
+                                        <div key={p.id} onClick={() => { setActiveProject(p); setView('project-detail'); }} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-lg cursor-pointer transition-all">
+                                            <div className="flex justify-between mb-4"><span className="text-[10px] font-bold bg-slate-100 px-2 py-1 rounded text-slate-600">{p.status}</span></div>
+                                            <h3 className="font-bold text-xl mb-4 text-slate-800">{p.title}</h3>
+                                            <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden"><div className="h-full bg-indigo-500" style={{ width: `${p.progress}%` }}></div></div>
+                                        </div>
+                                    ))}
                             </div>
                         </div>
                     )}
@@ -1110,9 +1124,9 @@ export default function App() {
                                                     </div>
                                                 </div>
                                                 <div className="mb-8">
-                                                    <div className="flex justify-between items-end mb-4"><label className="text-xs font-black text-amber-700 uppercase tracking-wider flex items-center gap-2"><ImageIcon size={16} /> Preview Komposisi (Max 20)</label><span className="text-[10px] text-amber-600 font-bold">{activeProject.previewImages.filter(Boolean).length} / 20 Terisi</span></div>
+                                                    <div className="flex justify-between items-end mb-4"><label className="text-xs font-black text-amber-700 uppercase tracking-wider flex items-center gap-2"><ImageIcon size={16} /> Preview Komposisi (Max 20)</label><span className="text-[10px] text-amber-600 font-bold">{(activeProject.previewImages || []).filter(Boolean).length} / 20 Terisi</span></div>
                                                     <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                                                        {activeProject.previewImages.map((img, idx) => (
+                                                        {(activeProject.previewImages || []).map((img, idx) => (
                                                             <div key={idx} className="aspect-square rounded-xl bg-white border border-amber-100 shadow-sm relative overflow-hidden group">
                                                                 {img ? <><img src={img} className="w-full h-full object-cover" />{userData?.role === 'tim_khusus' && <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2"><button onClick={() => handleRemoveImage(idx)} className="p-2 bg-red-500 text-white rounded-lg"><Trash2 size={14} /></button></div>}<button onClick={() => window.open(img, '_blank')} className="absolute bottom-2 right-2 p-1 bg-black/50 text-white rounded text-[10px] opacity-0 group-hover:opacity-100"><Maximize2 size={12} /></button></> : <div onClick={() => { if (userData?.role !== 'tim_khusus') return; setImageUploadState({ isOpen: true, slotIndex: idx, urlInput: '' }); }} className={`w-full h-full flex flex-col items-center justify-center text-amber-200 ${userData?.role === 'tim_khusus' ? 'cursor-pointer hover:bg-amber-50 hover:text-amber-400' : 'cursor-default'}`}><Plus size={24} /><span className="text-[10px] font-bold">Slot {idx + 1}</span></div>}
                                                             </div>
