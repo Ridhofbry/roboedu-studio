@@ -50,7 +50,7 @@ if (API_KEY_EXISTS) {
         app = initializeApp(firebaseConfig);
         auth = getAuth(app);
         db = getFirestore(app);
-        // Penting untuk mobile: Local Persistence
+        // Penting untuk mobile: Local Persistence agar sesi tidak hilang saat refresh
         setPersistence(auth, browserLocalPersistence).catch(console.error);
     } catch (error) {
         console.error("Firebase Init Error:", error);
@@ -277,7 +277,7 @@ export default function App() {
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
-  
+
   const [profileForm, setProfileForm] = useState({ username: '', school: '', city: '' });
   const [editProfileData, setEditProfileData] = useState({ displayName: '', bio: '', photoURL: '', school: '', city: '' });
   const [newProjectForm, setNewProjectForm] = useState({ title: '', isBigProject: false, teamId: 'team-1', deadline: '' });
@@ -306,18 +306,24 @@ export default function App() {
   // --- FIREBASE AUTH LISTENER (MAIN SOURCE OF TRUTH) ---
   useEffect(() => {
     if (!auth) return;
+    
+    // Start Loading
     setIsAuthChecking(true);
 
     const unsubAuth = onAuthStateChanged(auth, async (u) => {
-      setUser(u);
+      setUser(u); // Sync local state
       
       if (u) {
+        // User is logged in
         const docRef = doc(db, 'users', u.uid);
         const docSnap = await getDoc(docRef);
         const email = u.email;
         
+        // 1. USER SUDAH ADA DI DATABASE UTAMA
         if (docSnap.exists()) {
           const d = docSnap.data();
+          
+          // Force upgrade ke super_admin jika emailnya masuk list
           if (SUPER_ADMIN_EMAILS.includes(email) && d.role !== 'super_admin') {
              await updateDoc(docRef, { role: 'super_admin' });
              setUserData({ ...d, role: 'super_admin' });
@@ -325,6 +331,7 @@ export default function App() {
              setUserData(d);
           }
 
+          // Redirect Logic
           if (!d.isProfileComplete) {
              setView('profile-setup');
              setProfileForm({ username: u.displayName || '', school: d.school || '', city: d.city || '' });
@@ -333,15 +340,15 @@ export default function App() {
           }
           
         } else {
-          // USER BELUM ADA DI DB
+          // 2. USER BELUM ADA DI DATABASE
           if(SUPER_ADMIN_EMAILS.includes(email)) {
-             // AUTO CREATE SUPER ADMIN
+             // === SUPER ADMIN FLOW: BUAT AKUN BARU ===
              const newAdmin = {
                 email: u.email, 
                 displayName: u.displayName || "Super Admin", 
                 photoURL: u.photoURL || `https://ui-avatars.com/api/?name=${u.email}`,
                 role: 'super_admin', 
-                isProfileComplete: false, 
+                isProfileComplete: false, // Force isi profil
                 nameChangeCount: 0, 
                 uid: u.uid,
                 school: '',
@@ -351,6 +358,8 @@ export default function App() {
              
              try {
                 await setDoc(docRef, newAdmin);
+                
+                // Bersihkan dari pending jika ada
                 const q = query(collection(db, 'pending_users'), where('email', '==', email));
                 const snaps = await getDocs(q);
                 snaps.forEach(async (doc) => await deleteDoc(doc.ref));
@@ -364,7 +373,8 @@ export default function App() {
                 showToast("Gagal membuat akun admin.", "error");
              }
           } else {
-             // USER BIASA -> PENDING
+             // === NORMAL USER FLOW ===
+             // Add to pending if not exists
              const q = query(collection(db, 'pending_users'), where('email', '==', email));
              const querySnap = await getDocs(q);
              
@@ -378,6 +388,7 @@ export default function App() {
                  });
              }
              
+             // Kick out
              await signOut(auth);
              setUserData(null);
              setView('landing');
@@ -385,9 +396,12 @@ export default function App() {
           }
         }
       } else {
+        // No User
         setUserData(null);
         setView('landing');
       }
+      
+      // Stop Loading
       setIsAuthChecking(false);
       setLoadingLogin(false);
     });
@@ -450,8 +464,10 @@ export default function App() {
     try {
         if (isRegistering) {
             await createUserWithEmailAndPassword(auth, authEmail, authPassword);
+            // onAuthStateChanged akan handle logic create user/pending
         } else {
             await signInWithEmailAndPassword(auth, authEmail, authPassword);
+            // onAuthStateChanged akan handle logic redirect
         }
     } catch (err) {
         console.error("Auth error:", err);
@@ -461,31 +477,36 @@ export default function App() {
         if (err.code === 'auth/weak-password') errorMsg = "Password terlalu lemah (min 6 karakter).";
         
         showToast(errorMsg, "error");
-        setLoadingLogin(false);
+        setLoadingLogin(false); // Stop loading if error
     }
   };
 
   const handleLogout = async () => { await signOut(auth); setView('landing'); setShowMobileMenu(false); };
 
-  // PROFILE (Using 'user')
+  // PROFILE (Using 'user' variable)
   const handleProfileSubmit = async () => {
-      try {
-          await updateDoc(doc(db, 'users', user.uid), {
-              displayName: profileForm.username,
-              school: profileForm.school,
-              city: profileForm.city,
-              isProfileComplete: true,
-              bio: userData?.bio || "Member Baru"
-          });
-          const updatedDoc = await getDoc(doc(db, 'users', user.uid));
-          setUserData(updatedDoc.data());
-          setView('dashboard');
-          sendOneSignalNotification('mobile_push', 'Kamu berhasil login Roboedu Studio');
-          showToast(`Selamat datang, ${profileForm.username}`);
-      } catch (e) { 
-        console.error(e);
-        showToast("Gagal simpan profil", "error"); 
-      }
+    if (!user) return;
+    try {
+        await updateDoc(doc(db, 'users', user.uid), {
+            displayName: profileForm.username,
+            school: profileForm.school,
+            city: profileForm.city,
+            isProfileComplete: true,
+            bio: userData?.bio || "Member Baru"
+        });
+        
+        // Force refresh user data
+        const updatedDoc = await getDoc(doc(db, 'users', user.uid));
+        if (updatedDoc.exists()) {
+           setUserData(updatedDoc.data());
+           setView('dashboard');
+           sendOneSignalNotification('mobile_push', 'Kamu berhasil login Roboedu Studio');
+           showToast(`Selamat datang, ${profileForm.username}`);
+        }
+    } catch (e) { 
+      console.error("Profile submit error:", e);
+      showToast("Gagal simpan profil: " + e.message, "error"); 
+    }
   };
 
   const handleUpdateProfile = async () => {
@@ -519,10 +540,14 @@ export default function App() {
               isProfileComplete: false,
               nameChangeCount: 0
           };
-          await setDoc(doc(db, 'users', selectedPendingUser.uid), newUser);
+          
+          // Ensure UID exists
+          if (!newUser.uid) throw new Error("UID Missing");
+
+          await setDoc(doc(db, 'users', newUser.uid), newUser);
           await deleteDoc(doc(db, 'pending_users', selectedPendingUser.id));
           setIsApprovalModalOpen(false); setSelectedPendingUser(null); showToast("User Disetujui!");
-      } catch (e) { console.error(e); showToast("Gagal Approve", "error"); }
+      } catch (e) { console.error(e); showToast("Gagal Approve: " + e.message, "error"); }
   };
 
   const handleRejectUser = (u) => { requestConfirm("Tolak?", "Hapus user.", async () => { await deleteDoc(doc(db, 'pending_users', u.id)); showToast("Ditolak."); }); };
@@ -563,6 +588,9 @@ export default function App() {
             <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />
             <h1 className="text-2xl font-black text-slate-800 mb-2">Konfigurasi Hilang!</h1>
             <p className="text-slate-500 mb-4 text-sm">Website ini belum terhubung ke Firebase. Mohon masukkan <b>Environment Variables</b> (API Key) di Dashboard Vercel.</p>
+            <div className="bg-slate-100 p-4 rounded-xl text-xs text-left font-mono text-slate-600 break-all border border-slate-200">
+                VITE_FIREBASE_API_KEY=...<br/>VITE_FIREBASE_AUTH_DOMAIN=...
+            </div>
         </div>
       </div>
     );
@@ -665,9 +693,9 @@ export default function App() {
                             setEditProfileData(userData); setIsEditProfileOpen(true); setShowMobileMenu(false); 
                         }
                     }}>
-                        <img src={userData?.photoURL} className="w-12 h-12 rounded-full border border-slate-200"/>
+                        <img src={userData?.photoURL || user.photoURL} className="w-12 h-12 rounded-full border border-slate-200"/>
                         <div>
-                            <p className="font-bold text-slate-800">{userData?.displayName}</p>
+                            <p className="font-bold text-slate-800">{userData?.displayName || user.email}</p>
                             <div className="flex items-center gap-2">
                                 <p className="text-xs text-indigo-600 font-black uppercase">{userData?.role?.replace('_', ' ')}</p>
                                 {userData?.isProfileComplete && <span className="text-[10px] text-slate-400 bg-white px-1 rounded border">Edit Profil</span>}
@@ -952,7 +980,7 @@ export default function App() {
             )}
 
             {/* Dashboard & Project Detail */}
-            {view === 'dashboard' && (
+            {view === 'dashboard' && userData && ( // Added safety check
                 <div className="pt-20 animate-[fadeIn_0.3s]">
                            {(userData?.role === 'supervisor' || userData?.role === 'super_admin') && activeTeamId && (
                                <button onClick={() => { setActiveTeamId(null); setView('team-list'); }} className="mb-4 text-xs font-bold text-slate-400 hover:text-indigo-600 flex items-center gap-1"><ChevronLeft size={14}/> Kembali ke List Tim</button>
@@ -1352,10 +1380,10 @@ export default function App() {
            </div>
            <div><label className="block text-xs font-bold text-slate-500 mb-1">Bio Singkat</label><textarea className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:border-indigo-500 h-24 resize-none" value={editProfileData.bio} onChange={e => setEditProfileData({...editProfileData, bio: e.target.value})} /></div>
            
-           {/* READ ONLY FIELDS (FIXED USER VARIABLE) */}
+           {/* READ ONLY FIELDS */}
            <div className="grid grid-cols-2 gap-4">
-               <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Sekolah</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={userData?.school || '-'} /></div>
-               <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Kota</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={userData?.city || '-'} /></div>
+               <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Sekolah</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={user?.school || '-'} /></div>
+               <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Kota</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={user?.city || '-'} /></div>
            </div>
 
            <div>
@@ -1431,6 +1459,7 @@ export default function App() {
                 <span className="bg-indigo-50 text-indigo-600 px-3 py-1 rounded-lg text-[10px] font-bold uppercase mb-4 inline-block">{selectedNews.category}</span>
                 <h2 className="text-2xl font-black text-slate-800 mb-4 leading-tight">{selectedNews.title}</h2>
                 <div className="text-sm text-slate-600 leading-relaxed bg-slate-50 p-6 rounded-[2rem] mb-4 border border-slate-100 font-medium whitespace-pre-line">{selectedNews.content}</div>
+                <div className="text-xs text-slate-400 font-bold text-right">Diposting: {selectedNews.date}</div>
             </div>
         )}
       </Modal>
