@@ -40,18 +40,30 @@ const firebaseConfig = {
 let app, auth, db, googleProvider;
 
 if (API_KEY_EXISTS) {
-    try {
-        app = initializeApp(firebaseConfig);
-        auth = getAuth(app);
-        db = getFirestore(app);
-        googleProvider = new GoogleAuthProvider();
-        // Set persistensi lokal (PENTING)
-        setPersistence(auth, browserLocalPersistence).catch(console.error);
-    } catch (error) {
-        console.error("Firebase Init Error:", error);
-    }
-}
+   try {
+      final GoogleSignIn googleSignIn = GoogleSignIn();
+      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
 
+      if (googleUser != null) {
+        final GoogleSignInAuthentication googleAuth =
+            await googleUser.authentication;
+        final AuthCredential credential = GoogleAuthProvider.credential(
+          accessToken: googleAuth.accessToken,
+          idToken: googleAuth.idToken,
+        );
+
+        UserCredential userCredential =
+            await FirebaseAuth.instance.signInWithCredential(credential);
+        User? user = userCredential.user;
+
+        if (user != null) {
+          print('User signed in: ${user.email}');
+        }
+      }
+    } catch (e) {
+      print(e.toString());
+    }
+  }
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
 
