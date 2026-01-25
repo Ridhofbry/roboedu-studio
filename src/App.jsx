@@ -273,12 +273,11 @@ export default function App() {
   const [selectedNews, setSelectedNews] = useState(null);
   const [selectedPendingUser, setSelectedPendingUser] = useState(null);
 
-  // Form States (Login)
+  // Form States
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
-
-  // Form States (Data)
+  
   const [profileForm, setProfileForm] = useState({ username: '', school: '', city: '' });
   const [editProfileData, setEditProfileData] = useState({ displayName: '', bio: '', photoURL: '', school: '', city: '' });
   const [newProjectForm, setNewProjectForm] = useState({ title: '', isBigProject: false, teamId: 'team-1', deadline: '' });
@@ -307,24 +306,18 @@ export default function App() {
   // --- FIREBASE AUTH LISTENER (MAIN SOURCE OF TRUTH) ---
   useEffect(() => {
     if (!auth) return;
-    
-    // Start Loading
     setIsAuthChecking(true);
 
     const unsubAuth = onAuthStateChanged(auth, async (u) => {
-      setUser(u); // Sync local state
+      setUser(u);
       
       if (u) {
-        // User is logged in
         const docRef = doc(db, 'users', u.uid);
         const docSnap = await getDoc(docRef);
         const email = u.email;
         
-        // 1. USER SUDAH ADA DI DATABASE UTAMA
         if (docSnap.exists()) {
           const d = docSnap.data();
-          
-          // Force upgrade ke super_admin jika emailnya masuk list
           if (SUPER_ADMIN_EMAILS.includes(email) && d.role !== 'super_admin') {
              await updateDoc(docRef, { role: 'super_admin' });
              setUserData({ ...d, role: 'super_admin' });
@@ -332,7 +325,6 @@ export default function App() {
              setUserData(d);
           }
 
-          // Redirect Logic
           if (!d.isProfileComplete) {
              setView('profile-setup');
              setProfileForm({ username: u.displayName || '', school: d.school || '', city: d.city || '' });
@@ -341,15 +333,15 @@ export default function App() {
           }
           
         } else {
-          // 2. USER BELUM ADA DI DATABASE
+          // USER BELUM ADA DI DB
           if(SUPER_ADMIN_EMAILS.includes(email)) {
-             // === SUPER ADMIN FLOW: BUAT AKUN BARU ===
+             // AUTO CREATE SUPER ADMIN
              const newAdmin = {
                 email: u.email, 
                 displayName: u.displayName || "Super Admin", 
                 photoURL: u.photoURL || `https://ui-avatars.com/api/?name=${u.email}`,
                 role: 'super_admin', 
-                isProfileComplete: false, // Force isi profil
+                isProfileComplete: false, 
                 nameChangeCount: 0, 
                 uid: u.uid,
                 school: '',
@@ -359,8 +351,6 @@ export default function App() {
              
              try {
                 await setDoc(docRef, newAdmin);
-                
-                // Bersihkan dari pending jika ada
                 const q = query(collection(db, 'pending_users'), where('email', '==', email));
                 const snaps = await getDocs(q);
                 snaps.forEach(async (doc) => await deleteDoc(doc.ref));
@@ -374,7 +364,7 @@ export default function App() {
                 showToast("Gagal membuat akun admin.", "error");
              }
           } else {
-             // === NORMAL USER FLOW ===
+             // USER BIASA -> PENDING
              const q = query(collection(db, 'pending_users'), where('email', '==', email));
              const querySnap = await getDocs(q);
              
@@ -388,7 +378,6 @@ export default function App() {
                  });
              }
              
-             // Kick out
              await signOut(auth);
              setUserData(null);
              setView('landing');
@@ -396,12 +385,9 @@ export default function App() {
           }
         }
       } else {
-        // No User
         setUserData(null);
         setView('landing');
       }
-      
-      // Stop Loading
       setIsAuthChecking(false);
       setLoadingLogin(false);
     });
@@ -464,10 +450,8 @@ export default function App() {
     try {
         if (isRegistering) {
             await createUserWithEmailAndPassword(auth, authEmail, authPassword);
-            // onAuthStateChanged akan handle logic create user/pending
         } else {
             await signInWithEmailAndPassword(auth, authEmail, authPassword);
-            // onAuthStateChanged akan handle logic redirect
         }
     } catch (err) {
         console.error("Auth error:", err);
@@ -477,47 +461,32 @@ export default function App() {
         if (err.code === 'auth/weak-password') errorMsg = "Password terlalu lemah (min 6 karakter).";
         
         showToast(errorMsg, "error");
-        setLoadingLogin(false); // Stop loading if error
+        setLoadingLogin(false);
     }
   };
 
   const handleLogout = async () => { await signOut(auth); setView('landing'); setShowMobileMenu(false); };
 
-  // PROFILE (Using 'user' consistent variable)
-
+  // PROFILE (Using 'user')
   const handleProfileSubmit = async () => {
       try {
-          // 1. Update ke Firestore
           await updateDoc(doc(db, 'users', user.uid), {
               displayName: profileForm.username,
               school: profileForm.school,
               city: profileForm.city,
-              isProfileComplete: true, // Pastikan flag ini true
+              isProfileComplete: true,
               bio: userData?.bio || "Member Baru"
           });
-          const updatedDocSnap = await getDoc(doc(db, 'users', user.uid));
-          
-          if (updatedDocSnap.exists()) {
-              const updatedData = updatedDocSnap.data();
-              
-              // 3. Update State Lokal DULU
-              setUserData(updatedData);
-              
-              // 4. Baru pindah halaman
-              setView('dashboard');
-              
-              sendOneSignalNotification('mobile_push', 'Kamu berhasil login Roboedu Studio');
-              showToast(`Selamat datang, ${profileForm.username}`);
-          } else {
-              throw new Error("Gagal mengambil data user terbaru.");
-          }
-
+          const updatedDoc = await getDoc(doc(db, 'users', user.uid));
+          setUserData(updatedDoc.data());
+          setView('dashboard');
+          sendOneSignalNotification('mobile_push', 'Kamu berhasil login Roboedu Studio');
+          showToast(`Selamat datang, ${profileForm.username}`);
       } catch (e) { 
-        console.error("Profile submit error:", e);
-        showToast("Gagal simpan profil: " + e.message, "error"); 
+        console.error(e);
+        showToast("Gagal simpan profil", "error"); 
       }
   };
-
 
   const handleUpdateProfile = async () => {
       try {
@@ -594,9 +563,6 @@ export default function App() {
             <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />
             <h1 className="text-2xl font-black text-slate-800 mb-2">Konfigurasi Hilang!</h1>
             <p className="text-slate-500 mb-4 text-sm">Website ini belum terhubung ke Firebase. Mohon masukkan <b>Environment Variables</b> (API Key) di Dashboard Vercel.</p>
-            <div className="bg-slate-100 p-4 rounded-xl text-xs text-left font-mono text-slate-600 break-all border border-slate-200">
-                VITE_FIREBASE_API_KEY=...<br/>VITE_FIREBASE_AUTH_DOMAIN=...
-            </div>
         </div>
       </div>
     );
