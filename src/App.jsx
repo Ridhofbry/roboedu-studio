@@ -605,7 +605,20 @@ export default function App() {
     };
     const handleUpdateProjectFirestore = async (id, data) => { try { await updateDoc(doc(db, 'projects', id), data); } catch (e) { showToast("Gagal update project", "error"); } };
     const handleDeleteProject = (id) => { requestConfirm("Hapus Project?", "Permanen.", async () => { await deleteDoc(doc(db, 'projects', id)); if (activeProject?.id === id) { setActiveProject(null); setView('dashboard'); } showToast("Project Dihapus"); }); };
-    const toggleTask = (projId, taskId) => { const proj = projects.find(p => p.id === projId); if (!proj) return; if (userData.role === 'supervisor' || userData.role === 'super_admin') return showToast("Admin view only", "error"); if (isTaskLocked(taskId, proj.completedTasks)) return showToast("Tugas terkunci!", "error"); const newTasks = proj.completedTasks.includes(taskId) ? proj.completedTasks.filter(t => t !== taskId) : [...proj.completedTasks, taskId]; const newProgress = calculateProgress(newTasks); const status = newProgress === 100 ? 'Completed' : proj.status; handleUpdateProjectFirestore(projId, { completedTasks: newTasks, progress: newProgress, status }); };
+    const toggleTask = (projId, taskId) => {
+        const proj = projects.find(p => p.id === projId);
+        if (!proj) return;
+
+        // Allow creator to toggle their own tasks
+        // Admin can view but this function is for creators only in UI
+        if (userData.role === 'creator' || userData.role === 'tim_khusus') {
+            if (isTaskLocked(taskId, proj.completedTasks)) return showToast("Tugas terkunci!", "error");
+            const newTasks = proj.completedTasks.includes(taskId) ? proj.completedTasks.filter(t => t !== taskId) : [...proj.completedTasks, taskId];
+            const newProgress = calculateProgress(newTasks);
+            const status = newProgress === 100 ? 'Completed' : proj.status;
+            handleUpdateProjectFirestore(projId, { completedTasks: newTasks, progress: newProgress, status });
+        }
+    };
     const handleRemoveImage = (index) => { const newImages = [...activeProject.previewImages]; newImages[index] = null; handleUpdateProjectFirestore(activeProject.id, { previewImages: newImages }); };
     const handleImageSubmit = async () => { if (imageUploadState.slotIndex !== null) { const newImages = [...activeProject.previewImages]; newImages[imageUploadState.slotIndex] = imageUploadState.urlInput; await handleUpdateProjectFirestore(activeProject.id, { previewImages: newImages }); setImageUploadState({ isOpen: false, slotIndex: null, urlInput: '' }); showToast("Foto tersimpan!"); } };
     const handleSubmitPreview = (proj) => { if (!proj.previewLink) return showToast("Link kosong!", "error"); handleUpdateProjectFirestore(proj.id, { status: "Preview Submitted" }); sendOneSignalNotification('supervisor', `Review preview: "${proj.title}"`, TEAMS.find(t => t.id === proj.teamId)?.name); };
@@ -619,7 +632,22 @@ export default function App() {
     const handleDeleteAsset = (id) => { requestConfirm("Hapus Aset?", "Permanen.", async () => { await deleteDoc(doc(db, 'assets', id)); showToast("Aset Dihapus"); }); };
     const handleSaveNews = async () => { if (newsForm.id) { await updateDoc(doc(db, 'news', newsForm.id), newsForm); } setIsEditNewsOpen(false); showToast("Berita Update"); };
     const handleSaveLogo = async () => { await setDoc(doc(db, 'site_config', 'main'), { logo: logoForm }, { merge: true }); setIsEditLogoOpen(false); showToast("Logo Update"); };
-    const handleSaveWeekly = async () => { await setDoc(doc(db, 'site_config', 'main'), { weekly: weeklyForm }, { merge: true }); setIsEditWeeklyOpen(false); showToast("Highlight Update"); };
+    const handleSaveWeekly = async () => {
+        try {
+            console.log("🔵 DEBUG: Saving weekly highlight...", weeklyForm);
+            // Optimistic update
+            setWeeklyContent(weeklyForm);
+
+            await setDoc(doc(db, 'site_config', 'main'), { weekly: weeklyForm }, { merge: true });
+            console.log("🔵 DEBUG: Weekly highlight saved to Firestore");
+
+            setIsEditWeeklyOpen(false);
+            showToast("Highlight Update Success!");
+        } catch (e) {
+            console.error("🔴 ERROR Saving Weekly:", e);
+            showToast("Gagal update: " + e.message, "error");
+        }
+    };
     const handleScript = async () => { setIsAILoading(true); const text = await generateAIScript(aiPrompt); setAiResult(text); setIsAILoading(false); };
 
     const handleOpenApproveModal = (u) => { setSelectedPendingUser(u); setApprovalForm({ role: 'creator', teamId: 'team-1' }); setIsApprovalModalOpen(true); };
@@ -1372,6 +1400,70 @@ export default function App() {
                         </div>
                     )}
 
+                    {/* Archive View - Completed Projects */}
+                    {view === 'archive' && (
+                        <div className="pt-20 animate-[fadeIn_0.3s]">
+                            <div className="flex justify-between items-end mb-8">
+                                <div>
+                                    <button onClick={() => setView('dashboard')} className="mb-2 text-xs font-bold text-slate-400 hover:text-indigo-600 flex items-center gap-1"><ChevronLeft size={14} /> Kembali</button>
+                                    <h2 className="text-3xl font-black text-slate-800">Arsip Project</h2>
+                                    <p className="text-sm text-slate-500 mt-1">Project yang sudah selesai</p>
+                                </div>
+                            </div>
+                            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
+                                {projects
+                                    .filter(p => {
+                                        // Show completed projects only
+                                        if (p.status !== ' Completed') return false;
+
+                                        // Team-based filter
+                                        if (userData?.role === 'supervisor' || userData?.role === 'super_admin') {
+                                            return activeTeamId ? (p.teamId === activeTeamId) : true;
+                                        } else {
+                                            return p.teamId === userData?.teamId;
+                                        }
+                                    })
+                                    .map(p => (
+                                        <div key={p.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-lg transition-all group">
+                                            <div className="flex justify-between mb-4">
+                                                <span className="text-[10px] bg-emerald-100 text-emerald-600 px-3 py-1 rounded-full font-bold uppercase flex items-center gap-1">
+                                                    <CheckCircle2 size={10} /> Completed
+                                                </span>
+                                                <span className="text-[10px] text-slate-400 font-bold">{p.createdAt}</span>
+                                            </div>
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <span className="text-[10px] bg-slate-100 px-2 py-1 rounded font-bold text-slate-600">
+                                                    {TEAMS.find(t => t.id === p.teamId)?.name}
+                                                </span>
+                                            </div>
+                                            <h3 className="font-bold text-slate-800 text-lg mb-3 leading-tight">{p.title}</h3>
+                                            <div className="w-full bg-emerald-100 h-2 rounded-full overflow-hidden mb-4">
+                                                <div className="h-full bg-emerald-500" style={{ width: '100%' }}></div>
+                                            </div>
+                                            {p.finalLink && (
+                                                <a href={p.finalLink} target="_blank" className="flex items-center justify-center gap-2 w-full py-3 bg-emerald-50 text-emerald-600 rounded-xl text-sm font-bold border border-emerald-100 hover:bg-emerald-100 transition-colors">
+                                                    <LinkIcon size={16} /> Buka Hasil Final
+                                                </a>
+                                            )}
+                                        </div>
+                                    ))}
+                                {projects.filter(p => {
+                                    if (p.status !== 'Completed') return false;
+                                    if (userData?.role === 'supervisor' || userData?.role === 'super_admin') {
+                                        return activeTeamId ? (p.teamId === activeTeamId) : true;
+                                    } else {
+                                        return p.teamId === userData?.teamId;
+                                    }
+                                }).length === 0 && (
+                                        <div className="col-span-full text-center py-20">
+                                            <Archive size={48} className="mx-auto text-slate-300 mb-4" />
+                                            <p className="text-slate-400 font-medium">Belum ada project yang selesai</p>
+                                        </div>
+                                    )}
+                            </div>
+                        </div>
+                    )}
+
                 </div>
             </div>
 
@@ -1519,7 +1611,7 @@ export default function App() {
                 <div className="space-y-4">
                     <div><label className="block text-xs font-bold text-slate-500 mb-1">Judul Highlight</label><input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:border-indigo-500 transition-colors" value={weeklyForm.title} onChange={e => setWeeklyForm({ ...weeklyForm, title: e.target.value })} /></div>
                     <div><label className="block text-xs font-bold text-slate-500 mb-1">URL Gambar (Unsplash)</label><input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:border-indigo-500 transition-colors" value={weeklyForm.image} onChange={e => setWeeklyForm({ ...weeklyForm, image: e.target.value })} /></div>
-                    <button onClick={() => { setWeeklyContent(weeklyForm); setIsEditWeeklyOpen(false); showToast("Highlight berhasil diperbarui!"); }} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold transition-all shadow-lg flex items-center justify-center gap-2"><Save size={18} /> Simpan Perubahan</button>
+                    <button onClick={handleSaveWeekly} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold transition-all shadow-lg flex items-center justify-center gap-2"><Save size={18} /> Simpan Perubahan</button>
                 </div>
             </Modal>
 
