@@ -565,32 +565,43 @@ export default function App() {
 
     // PROJECTS
     const handleAddProject = async () => {
-        console.log('🔵 DEBUG: Add project called', newProjectForm);
-        if (!newProjectForm.title) return showToast("Isi judul!", "error");
+        try {
+            console.log('🔵 DEBUG: Add project called', newProjectForm);
+            if (!newProjectForm.title) return showToast("Isi judul!", "error");
 
-        const p = {
-            ...newProjectForm,
-            status: 'In Progress',
-            progress: 0,
-            isApproved: false,
-            previewImages: newProjectForm.isBigProject ? Array(20).fill(null) : [],
-            completedTasks: [],
-            equipment: '',
-            script: '',
-            feedback: '',
-            finalLink: '',
-            previewLink: '',
-            createdAt: new Date().toLocaleDateString(),
-            proposalStatus: 'None',
-            teamId: (userData.role === 'supervisor' || userData.role === 'super_admin') ? newProjectForm.teamId : userData.teamId
-        };
+            const p = {
+                title: newProjectForm.title,
+                isBigProject: newProjectForm.isBigProject || false,  // Ensure not undefined
+                teamId: (userData.role === 'supervisor' || userData.role === 'super_admin')
+                    ? (newProjectForm.teamId || 'team-1')
+                    : userData.teamId,
+                deadline: newProjectForm.deadline || '',  // Ensure not undefined
+                status: 'In Progress',
+                progress: 0,
+                isApproved: false,
+                previewImages: (newProjectForm.isBigProject || false) ? Array(20).fill(null) : [],
+                completedTasks: [],
+                equipment: '',
+                script: '',
+                feedback: '',
+                finalLink: '',
+                previewLink: '',
+                createdAt: new Date().toLocaleDateString(),
+                proposalStatus: 'None'
+            };
 
-        console.log('🔵 DEBUG: Saving project to Firestore...', p);
-        await addDoc(collection(db, 'projects'), p);
-        console.log('🔵 DEBUG: Project saved successfully!');
+            console.log('🔵 DEBUG: Saving project to Firestore...', p);
+            await addDoc(collection(db, 'projects'), p);
+            console.log('🔵 DEBUG: Project saved successfully!');
 
-        setIsAddProjectOpen(false);
-        showToast("Project Dibuat!");
+            // Reset form
+            setNewProjectForm({ title: '', isBigProject: false, teamId: 'team-1', deadline: '' });
+            setIsAddProjectOpen(false);
+            showToast("Project Dibuat!");
+        } catch (error) {
+            console.error('🔴 ERROR: Add project failed', error);
+            showToast("Gagal buat project: " + error.message, "error");
+        }
     };
     const handleUpdateProjectFirestore = async (id, data) => { try { await updateDoc(doc(db, 'projects', id), data); } catch (e) { showToast("Gagal update project", "error"); } };
     const handleDeleteProject = (id) => { requestConfirm("Hapus Project?", "Permanen.", async () => { await deleteDoc(doc(db, 'projects', id)); if (activeProject?.id === id) { setActiveProject(null); setView('dashboard'); } showToast("Project Dihapus"); }); };
