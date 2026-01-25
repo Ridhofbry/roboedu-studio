@@ -14,7 +14,7 @@ import {
 // --- PRODUCTION IMPORTS ---
 import { initializeApp } from "firebase/app";
 import { 
-  getAuth, GoogleAuthProvider, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged, setPersistence, browserLocalPersistence
+  getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, setPersistence, browserLocalPersistence
 } from "firebase/auth";
 import { 
   getFirestore, doc, setDoc, getDoc, updateDoc, deleteDoc, 
@@ -45,7 +45,7 @@ if (API_KEY_EXISTS) {
         auth = getAuth(app);
         db = getFirestore(app);
         googleProvider = new GoogleAuthProvider();
-        // Penting untuk mobile: Local Persistence
+        // Set persistensi lokal (PENTING)
         setPersistence(auth, browserLocalPersistence).catch(console.error);
     } catch (error) {
         console.error("Firebase Init Error:", error);
@@ -233,29 +233,18 @@ const WeeklyBotReport = ({ projects }) => {
     );
 };
 
-const RoboLogo = ({ size = 60 }) => (
-  <svg width={size} height={size} viewBox="0 0 100 100" className="overflow-visible drop-shadow-xl">
-    <path d="M50 20 L50 35" stroke="#4f46e5" strokeWidth="4" strokeLinecap="round" />
-    <circle cx="50" cy="15" r="5" fill="#f43f5e" className="animate-pulse" />
-    <rect x="25" y="35" width="50" height="40" rx="10" fill="white" stroke="#4f46e5" strokeWidth="3" />
-    <rect x="30" y="40" width="40" height="30" rx="6" fill="#e0e7ff" />
-    <circle cx="40" cy="55" r="4" fill="#1e1b4b" />
-    <circle cx="60" cy="55" r="4" fill="#1e1b4b" />
-  </svg>
-);
-
 /* ========================================================================
    MAIN APPLICATION
    ======================================================================== */
 
 export default function App() {
-  // State
+  // --- STATE ---
   const [user, setUser] = useState(null);
   const [userData, setUserData] = useState(null);
   const [view, setView] = useState('landing'); 
-  const [isAuthChecking, setIsAuthChecking] = useState(true);
+  const [isAuthChecking, setIsAuthChecking] = useState(true); // Default loading true
   
-  // Realtime Data
+  // Data Containers
   const [projects, setProjects] = useState([]);
   const [news, setNews] = useState([]);
   const [assets, setAssets] = useState([]);
@@ -305,92 +294,130 @@ export default function App() {
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', action: null, type: 'neutral' });
   const [isAILoading, setIsAILoading] = useState(false);
 
-  // --- HANDLE REDIRECT RESULT (CRITICAL FOR MOBILE) ---
+  // --- FIREBASE AUTH LISTENER (THE CORE LOGIC) ---
   useEffect(() => {
     if (!auth) return;
-    const checkRedirectResult = async () => {
-      try {
-        const result = await getRedirectResult(auth);
-        if (result) console.log("Redirect result detected:", result.user.email);
-      } catch (error) {
-        console.error("Redirect error:", error);
-        if (error.code !== 'auth/popup-closed-by-user' && error.code !== 'auth/cancelled-popup-request') {
-          showToast("Login gagal: " + error.message, "error");
-        }
-        setLoadingLogin(false);
-      }
-    };
-    checkRedirectResult();
-  }, []);
-
-  // --- FIREBASE AUTH LISTENER ---
-  useEffect(() => {
-    if (!auth) return;
+    
+    // Start Checking
     setIsAuthChecking(true);
+
     const unsubAuth = onAuthStateChanged(auth, async (u) => {
-      setUser(u);
+      setUser(u); // Update state user dasar
+      
       if (u) {
+        console.log("User detected:", u.email);
         const docRef = doc(db, 'users', u.uid);
         const docSnap = await getDoc(docRef);
         const email = u.email;
+        
+        // 1. CEK APAKAH USER ADA DI DATABASE UTAMA
         if (docSnap.exists()) {
           const d = docSnap.data();
+          console.log("User data found:", d);
+
+          // Force upgrade Super Admin jika belum role yang benar
           if (SUPER_ADMIN_EMAILS.includes(email) && d.role !== 'super_admin') {
+             console.log("Promoting to Super Admin...");
              await updateDoc(docRef, { role: 'super_admin' });
              setUserData({ ...d, role: 'super_admin' });
-          } else { setUserData(d); }
+          } else {
+             setUserData(d);
+          }
+
+          // Redirect Logic berdasarkan kelengkapan profil
           if (!d.isProfileComplete) {
+             console.log("Redirecting to Profile Setup");
              setView('profile-setup');
              setProfileForm({ username: u.displayName || '', school: d.school || '', city: d.city || '' });
-          } else { setView('dashboard'); }
-        } else {
-          if(SUPER_ADMIN_EMAILS.includes(email)) {
-             const newAdmin = {
-                email: u.email, displayName: u.displayName, photoURL: u.photoURL,
-                role: 'super_admin', isProfileComplete: false, nameChangeCount: 0, uid: u.uid,
-                school: '', city: '', bio: 'Super Administrator'
-             };
-             await setDoc(docRef, newAdmin);
-             setUserData(newAdmin);
-             const q = query(collection(db, 'pending_users'), where('email', '==', email));
-             const snaps = await getDocs(q);
-             snaps.forEach(async (doc) => await deleteDoc(doc.ref));
-             setView('profile-setup');
-             setProfileForm({ username: u.displayName || '', school: '', city: '' });
-             showToast("Welcome Super Admin!");
           } else {
+             console.log("Redirecting to Dashboard");
+             setView('dashboard');
+          }
+          
+        } else {
+          // 2. USER TIDAK ADA DI DATABASE
+          console.log("User not found in DB.");
+          
+          if(SUPER_ADMIN_EMAILS.includes(email)) {
+             // === SUPER ADMIN FLOW: BUAT AKUN BARU ===
+             console.log("Creating Super Admin Account...");
+             const newAdmin = {
+                email: u.email, 
+                displayName: u.displayName, 
+                photoURL: u.photoURL,
+                role: 'super_admin', 
+                isProfileComplete: false, // Force isi profil
+                nameChangeCount: 0, 
+                uid: u.uid,
+                school: '',
+                city: '',
+                bio: 'Super Administrator'
+             };
+             
+             try {
+                await setDoc(docRef, newAdmin);
+                
+                // Bersihkan dari pending jika ada
+                const q = query(collection(db, 'pending_users'), where('email', '==', email));
+                const snaps = await getDocs(q);
+                snaps.forEach(async (doc) => await deleteDoc(doc.ref));
+
+                setUserData(newAdmin);
+                setView('profile-setup'); // Paksa isi profil dulu
+                setProfileForm({ username: u.displayName || '', school: '', city: '' });
+                showToast("Selamat Datang Super Admin! Silakan lengkapi profil.");
+             } catch (e) {
+                console.error("Error creating admin:", e);
+                showToast("Gagal membuat akun admin.", "error");
+             }
+          } else {
+             // === NORMAL USER FLOW ===
+             console.log("Normal user, checking pending status...");
              const q = query(collection(db, 'pending_users'), where('email', '==', email));
              const querySnap = await getDocs(q);
+             
              if (querySnap.empty) {
                  await addDoc(collection(db, 'pending_users'), {
-                     email, displayName: u.displayName, photoURL: u.photoURL,
-                     date: new Date().toLocaleDateString(), uid: u.uid
+                     email, 
+                     displayName: u.displayName, 
+                     photoURL: u.photoURL,
+                     date: new Date().toLocaleDateString(), 
+                     uid: u.uid
                  });
              }
+             
+             // KICK OUT
              await signOut(auth);
              setUserData(null);
              setView('landing');
              setShowPendingAlert(true);
           }
         }
-        setLoadingLogin(false);
       } else {
+        // NO USER
         setUserData(null);
         setView('landing');
-        setLoadingLogin(false);
       }
+      
+      // FINISH CHECKING
       setIsAuthChecking(false);
+      setLoadingLogin(false);
     });
     return () => unsubAuth();
   }, []);
 
+  // --- DATA LISTENERS ---
   useEffect(() => {
     if (!db) return;
     const unsubProj = onSnapshot(collection(db, 'projects'), (s) => setProjects(s.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubNews = onSnapshot(collection(db, 'news'), (s) => setNews(s.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubAssets = onSnapshot(collection(db, 'assets'), (s) => setAssets(s.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubConfig = onSnapshot(doc(db, 'site_config', 'main'), (d) => {
-      if(d.exists()) { const data = d.data(); if(data.logo) setSiteLogo(data.logo); if(data.weekly) setWeeklyContent(data.weekly); }
+      if(d.exists()) {
+        const data = d.data();
+        if(data.logo) setSiteLogo(data.logo);
+        if(data.weekly) setWeeklyContent(data.weekly);
+      }
     });
     return () => { unsubProj(); unsubNews(); unsubAssets(); unsubConfig(); };
   }, []);
@@ -403,12 +430,19 @@ export default function App() {
     });
     let unsubPending = () => {};
     if (userData?.role === 'super_admin' || userData?.role === 'supervisor') {
-      unsubPending = onSnapshot(collection(db, 'pending_users'), (s) => setPendingUsers(s.docs.map(d => ({ ...d.data(), id: d.id }))));
+      unsubPending = onSnapshot(collection(db, 'pending_users'), (s) => {
+        setPendingUsers(s.docs.map(d => ({ ...d.data(), id: d.id })));
+      });
     }
     return () => { unsubPublicUsers(); unsubPending(); };
   }, [userData?.role]);
 
-  useEffect(() => { if(view === 'landing' && usersList.length > 0) { const i = setInterval(() => setSpotlightIndex(p => (p + 1) % usersList.length), 10000); return () => clearInterval(i); } }, [view, usersList]);
+  useEffect(() => {
+     if(view === 'landing' && usersList.length > 0) {
+         const i = setInterval(() => setSpotlightIndex(p => (p + 1) % usersList.length), 10000);
+         return () => clearInterval(i);
+     }
+  }, [view, usersList]);
 
   // --- HANDLERS ---
   const showToast = (msg, type='success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); };
@@ -419,40 +453,89 @@ export default function App() {
   const requestConfirm = (title, message, action, type='danger') => { setConfirmModal({ isOpen: true, title, message, action, type }); };
   const executeConfirmAction = () => { if (confirmModal.action) confirmModal.action(); setConfirmModal({ ...confirmModal, isOpen: false }); };
 
+  // AUTH (POPUP VERSION - MORE STABLE)
   const handleGoogleLogin = async () => {
-    setLoadingLogin(true); setShowPendingAlert(false);
-    try { await signInWithRedirect(auth, googleProvider); } 
-    catch (err) { console.error("Login error:", err); setLoadingLogin(false); if (err.code !== 'auth/popup-closed-by-user' && err.code !== 'auth/cancelled-popup-request') showToast("Login Gagal: " + err.message, "error"); }
+    setLoadingLogin(true);
+    setShowPendingAlert(false);
+    try {
+        await signInWithPopup(auth, googleProvider);
+        // Logic lanjutan akan ditangani oleh onAuthStateChanged
+    } catch (err) {
+        console.error("Login error:", err);
+        setLoadingLogin(false);
+        if (err.code !== 'auth/popup-closed-by-user') {
+            showToast("Login Gagal: " + err.message, "error");
+        }
+    }
   };
+
   const handleLogout = async () => { await signOut(auth); setView('landing'); setShowMobileMenu(false); };
 
+  // PROFILE (Using 'user' variable)
   const handleProfileSubmit = async () => {
       try {
-          await updateDoc(doc(db, 'users', user.uid), { displayName: profileForm.username, school: profileForm.school, city: profileForm.city, isProfileComplete: true, bio: userData?.bio || "Member Baru" });
-          const updatedDoc = await getDoc(doc(db, 'users', user.uid)); setUserData(updatedDoc.data()); setView('dashboard');
-          sendOneSignalNotification('mobile_push', 'Kamu berhasil login Roboedu Studio'); showToast(`Selamat datang, ${profileForm.username}`);
-      } catch (e) { console.error("Profile submit error:", e); showToast("Gagal simpan profil", "error"); }
+          await updateDoc(doc(db, 'users', user.uid), {
+              displayName: profileForm.username,
+              school: profileForm.school,
+              city: profileForm.city,
+              isProfileComplete: true,
+              bio: userData?.bio || "Member Baru"
+          });
+          const updatedDoc = await getDoc(doc(db, 'users', user.uid));
+          setUserData(updatedDoc.data());
+          setView('dashboard');
+          showToast(`Selamat datang, ${profileForm.username}`);
+      } catch (e) { 
+        console.error(e);
+        showToast("Gagal simpan profil", "error"); 
+      }
   };
+
   const handleUpdateProfile = async () => {
       try {
           let newCount = userData.nameChangeCount || 0;
-          if (editProfileData.displayName !== userData.displayName) { if (newCount >= 2) return showToast("Batas ganti nama habis!", "error"); newCount++; }
-          await updateDoc(doc(db, 'users', user.uid), { displayName: editProfileData.displayName, bio: editProfileData.bio, photoURL: editProfileData.photoURL, nameChangeCount: newCount });
+          if (editProfileData.displayName !== userData.displayName) { 
+              if (newCount >= 2) return showToast("Batas ganti nama habis!", "error");
+              newCount++;
+          }
+          await updateDoc(doc(db, 'users', user.uid), {
+              displayName: editProfileData.displayName,
+              bio: editProfileData.bio,
+              photoURL: editProfileData.photoURL,
+              nameChangeCount: newCount
+          });
           setIsEditProfileOpen(false); showToast("Profil diupdate!");
       } catch(e) { showToast("Gagal update", "error"); }
   };
 
+  // ADMIN
   const handleConfirmApproval = async () => {
       if(!selectedPendingUser) return;
       try {
-          const newUser = { uid: selectedPendingUser.uid, email: selectedPendingUser.email, displayName: selectedPendingUser.displayName, photoURL: selectedPendingUser.photoURL, role: approvalForm.role, teamId: approvalForm.role === 'creator' ? approvalForm.teamId : (approvalForm.role === 'tim_khusus' ? 'team-5' : null), isProfileComplete: false, nameChangeCount: 0 };
-          await setDoc(doc(db, 'users', selectedPendingUser.uid), newUser); await deleteDoc(doc(db, 'pending_users', selectedPendingUser.id));
+          const newUser = {
+              uid: selectedPendingUser.uid, 
+              email: selectedPendingUser.email,
+              displayName: selectedPendingUser.displayName,
+              photoURL: selectedPendingUser.photoURL,
+              role: approvalForm.role,
+              teamId: approvalForm.role === 'creator' ? approvalForm.teamId : (approvalForm.role === 'tim_khusus' ? 'team-5' : null),
+              isProfileComplete: false,
+              nameChangeCount: 0
+          };
+          await setDoc(doc(db, 'users', selectedPendingUser.uid), newUser);
+          await deleteDoc(doc(db, 'pending_users', selectedPendingUser.id));
           setIsApprovalModalOpen(false); setSelectedPendingUser(null); showToast("User Disetujui!");
       } catch (e) { console.error(e); showToast("Gagal Approve", "error"); }
   };
+
   const handleRejectUser = (u) => { requestConfirm("Tolak?", "Hapus user.", async () => { await deleteDoc(doc(db, 'pending_users', u.id)); showToast("Ditolak."); }); };
 
-  const handleAddProject = async () => { if(!newProjectForm.title) return showToast("Isi judul!", "error"); const p = { ...newProjectForm, status: 'In Progress', progress: 0, isApproved: false, previewImages: newProjectForm.isBigProject ? Array(20).fill(null) : [], completedTasks: [], equipment: '', script: '', feedback: '', finalLink: '', previewLink: '', createdAt: new Date().toLocaleDateString(), proposalStatus: 'None', teamId: (userData.role === 'supervisor' || userData.role === 'super_admin') ? newProjectForm.teamId : userData.teamId }; await addDoc(collection(db, 'projects'), p); setIsAddProjectOpen(false); showToast("Project Dibuat!"); };
+  // PROJECTS & OTHER LOGIC
+  const handleAddProject = async () => {
+      if(!newProjectForm.title) return showToast("Isi judul!", "error");
+      const p = { ...newProjectForm, status: 'In Progress', progress: 0, isApproved: false, previewImages: newProjectForm.isBigProject ? Array(20).fill(null) : [], completedTasks: [], equipment: '', script: '', feedback: '', finalLink: '', previewLink: '', createdAt: new Date().toLocaleDateString(), proposalStatus: 'None', teamId: (userData.role === 'supervisor' || userData.role === 'super_admin') ? newProjectForm.teamId : userData.teamId };
+      await addDoc(collection(db, 'projects'), p); setIsAddProjectOpen(false); showToast("Project Dibuat!");
+  };
   const handleUpdateProjectFirestore = async (id, data) => { try { await updateDoc(doc(db, 'projects', id), data); } catch (e) { showToast("Gagal update project", "error"); } };
   const handleDeleteProject = (id) => { requestConfirm("Hapus Project?", "Permanen.", async () => { await deleteDoc(doc(db, 'projects', id)); if(activeProject?.id === id) { setActiveProject(null); setView('dashboard'); } showToast("Project Dihapus"); }); };
   const toggleTask = (projId, taskId) => { const proj = projects.find(p => p.id === projId); if (!proj) return; if (userData.role === 'supervisor' || userData.role === 'super_admin') return showToast("Admin view only", "error"); if (isTaskLocked(taskId, proj.completedTasks)) return showToast("Tugas terkunci!", "error"); const newTasks = proj.completedTasks.includes(taskId) ? proj.completedTasks.filter(t=>t!==taskId) : [...proj.completedTasks, taskId]; const newProgress = calculateProgress(newTasks); const status = newProgress === 100 ? 'Completed' : proj.status; handleUpdateProjectFirestore(projId, { completedTasks: newTasks, progress: newProgress, status }); };
@@ -461,22 +544,21 @@ export default function App() {
   const handleSubmitPreview = (proj) => { if(!proj.previewLink) return showToast("Link kosong!", "error"); handleUpdateProjectFirestore(proj.id, { status: "Preview Submitted" }); sendOneSignalNotification('supervisor', `Review preview: "${proj.title}"`, TEAMS.find(t=>t.id===proj.teamId)?.name); };
   const handleApprovalAction = (isApproved, feedback) => { if(!isApproved && !feedback) return showToast("Isi revisi!", "error"); handleUpdateProjectFirestore(activeProject.id, { isApproved, status: isApproved ? "Approved" : "Revision Needed", feedback: isApproved ? "" : feedback }); sendOneSignalNotification('creator', isApproved ? "Preview Approved" : "Revisi Baru", TEAMS.find(t=>t.id===activeProject.teamId)?.name); };
   const handleSubmitFinalRegular = (proj) => { if(!proj.finalLink) return showToast("Link kosong!", "error"); requestConfirm("Submit Final?", "Project ke Arsip.", () => { handleUpdateProjectFirestore(proj.id, { status: "Completed", progress: 100, completedAt: new Date().toISOString() }); sendOneSignalNotification('supervisor', `FINAL SUBMIT: ${proj.title}`, TEAMS.find(t=>t.id===proj.teamId)?.name); setView('dashboard'); }, 'neutral'); };
-  
-  const handleProposeConcept = () => { if (!activeProject.finalLink) return showToast("Isi link!", "error"); handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Pending' }); sendOneSignalNotification('supervisor', `Pengajuan Konsep: "${activeProject.title}"`, 'Tim 5'); };
+  const handleProposeConcept = () => { if (!activeProject.finalLink) return showToast("Isi link!", "error"); handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Pending' }); sendOneSignalNotification('supervisor', `Pengajuan: ${activeProject.title}`, 'Tim 5'); };
   const handleReviewProposal = (isAcc, feedback) => { if(isAcc) { handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Approved', feedback: '' }); sendOneSignalNotification('creator', `Konsep DISETUJUI.`, 'Tim 5'); } else { if (!feedback) return showToast("Isi pesan!", "error"); handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Revision', feedback }); sendOneSignalNotification('creator', `REVISI Konsep: ${feedback}`, 'Tim 5'); } };
   const handleRePropose = () => { handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Pending' }); sendOneSignalNotification('supervisor', `Pengajuan ULANG: "${activeProject.title}"`, 'Tim 5'); };
   const handleSubmitFinalTim5 = () => { requestConfirm("Yakin Submit?", "Project selesai.", () => { handleUpdateProjectFirestore(activeProject.id, { status: "Completed", progress: 100, completedAt: new Date().toISOString() }); sendOneSignalNotification('supervisor', `FINAL SUBMIT Tim 5: ${activeProject.title}`, 'Tim 5'); setView('dashboard'); }, 'neutral'); };
-  
   const handleAddAsset = async () => { if(!newAssetForm.title) return; await addDoc(collection(db, 'assets'), { ...newAssetForm, date: new Date().toLocaleDateString() }); setIsAddAssetOpen(false); showToast("Aset Ditambah"); };
   const handleDeleteAsset = (id) => { requestConfirm("Hapus Aset?", "Permanen.", async () => { await deleteDoc(doc(db, 'assets', id)); showToast("Aset Dihapus"); }); };
   const handleSaveNews = async () => { if (newsForm.id) { await updateDoc(doc(db, 'news', newsForm.id), newsForm); } setIsEditNewsOpen(false); showToast("Berita Update"); };
   const handleSaveLogo = async () => { await setDoc(doc(db, 'site_config', 'main'), { logo: logoForm }, { merge: true }); setIsEditLogoOpen(false); showToast("Logo Update"); };
   const handleSaveWeekly = async () => { await setDoc(doc(db, 'site_config', 'main'), { weekly: weeklyForm }, { merge: true }); setIsEditWeeklyOpen(false); showToast("Highlight Update"); };
   const handleScript = async () => { setIsAILoading(true); const text = await generateAIScript(aiPrompt); setAiResult(text); setIsAILoading(false); };
+  
   const handleOpenApproveModal = (u) => { setSelectedPendingUser(u); setApprovalForm({ role: 'creator', teamId: 'team-1' }); setIsApprovalModalOpen(true); };
   const handleEditNewsUI = (item) => { setNewsForm(item); setIsEditNewsOpen(true); };
 
-  // --- SAFETY CHECK ---
+  // --- SAFETY CHECK RENDER ---
   if (!API_KEY_EXISTS) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-100 p-8 text-center font-sans">
@@ -489,7 +571,7 @@ export default function App() {
     );
   }
 
-  // --- LOADING SCREEN ---
+  // --- RENDER LOADING SCREEN (AUTH CHECK) ---
   if (isAuthChecking || loadingLogin) {
     return (
       <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center">
@@ -499,7 +581,7 @@ export default function App() {
     );
   }
 
-  // --- RENDER MAIN ---
+  // --- RENDER MAIN UI ---
   const globalStyles = `
     @keyframes float { 0% { transform: translateY(0px); } 50% { transform: translateY(-6px); } 100% { transform: translateY(0px); } }
     @keyframes blob { 0% { transform: translate(0px, 0px) scale(1); } 33% { transform: translate(30px, -50px) scale(1.1); } 66% { transform: translate(-20px, 20px) scale(0.9); } 100% { transform: translate(0px, 0px) scale(1); } }
@@ -617,7 +699,7 @@ export default function App() {
         </div>
       )}
 
-      {/* --- CONTENT AREA --- */}
+      {/* --- CONTENT AREA (SAMA SEPERTI SEBELUMNYA) --- */}
       <div className="flex-1 p-4 md:p-8 pb-32 relative z-10 w-full min-h-screen">
         <div className="max-w-7xl mx-auto w-full">
 
@@ -1227,7 +1309,7 @@ export default function App() {
            </div>
            <div><label className="block text-xs font-bold text-slate-500 mb-1">Bio Singkat</label><textarea className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:border-indigo-500 h-24 resize-none" value={editProfileData.bio} onChange={e => setEditProfileData({...editProfileData, bio: e.target.value})} /></div>
            
-           {/* READ ONLY FIELDS (FIXED: USING user? or userData?) */}
+           {/* READ ONLY FIELDS */}
            <div className="grid grid-cols-2 gap-4">
                <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Sekolah</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={userData?.school || '-'} /></div>
                <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Kota</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={userData?.city || '-'} /></div>
