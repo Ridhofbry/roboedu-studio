@@ -50,7 +50,7 @@ if (API_KEY_EXISTS) {
         app = initializeApp(firebaseConfig);
         auth = getAuth(app);
         db = getFirestore(app);
-        // Penting untuk mobile: Local Persistence agar sesi tidak hilang saat refresh
+        // Set persistensi agar sesi tidak hilang saat refresh
         setPersistence(auth, browserLocalPersistence).catch(console.error);
     } catch (error) {
         console.error("Firebase Init Error:", error);
@@ -303,7 +303,7 @@ export default function App() {
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', action: null, type: 'neutral' });
   const [isAILoading, setIsAILoading] = useState(false);
 
-  // --- FIREBASE AUTH LISTENER (MAIN SOURCE OF TRUTH) ---
+  // --- FIREBASE AUTH LISTENER (CRITICAL LOGIC) ---
   useEffect(() => {
     if (!auth) return;
     
@@ -311,99 +311,100 @@ export default function App() {
     setIsAuthChecking(true);
 
     const unsubAuth = onAuthStateChanged(auth, async (u) => {
-      setUser(u); // Sync local state
-      
-      if (u) {
-        // User is logged in
-        const docRef = doc(db, 'users', u.uid);
-        const docSnap = await getDoc(docRef);
-        const email = u.email;
+      // 1. Pastikan selalu try-catch agar loading tidak stuck
+      try {
+        setUser(u); // Sync local state user
         
-        // 1. USER SUDAH ADA DI DATABASE UTAMA
-        if (docSnap.exists()) {
-          const d = docSnap.data();
+        if (u) {
+          const docRef = doc(db, 'users', u.uid);
+          const docSnap = await getDoc(docRef);
+          const email = u.email;
           
-          // Force upgrade ke super_admin jika emailnya masuk list
-          if (SUPER_ADMIN_EMAILS.includes(email) && d.role !== 'super_admin') {
-             await updateDoc(docRef, { role: 'super_admin' });
-             setUserData({ ...d, role: 'super_admin' });
-          } else {
-             setUserData(d);
-          }
+          if (docSnap.exists()) {
+            // --- USER SUDAH ADA DI DATABASE ---
+            const d = docSnap.data();
+            
+            // Auto Promote Super Admin (Jika terdaftar tapi role salah)
+            if (SUPER_ADMIN_EMAILS.includes(email) && d.role !== 'super_admin') {
+               const updatedAdmin = { ...d, role: 'super_admin' };
+               await updateDoc(docRef, { role: 'super_admin' });
+               setUserData(updatedAdmin);
+            } else {
+               setUserData(d);
+            }
 
-          // Redirect Logic
-          if (!d.isProfileComplete) {
-             setView('profile-setup');
-             setProfileForm({ username: u.displayName || '', school: d.school || '', city: d.city || '' });
+            // Redirect Logic
+            if (!d.isProfileComplete) {
+               setView('profile-setup');
+               setProfileForm({ username: u.displayName || '', school: d.school || '', city: d.city || '' });
+            } else {
+               setView('dashboard');
+            }
+            
           } else {
-             setView('dashboard');
+            // --- USER BARU (BELUM ADA DI USERS) ---
+            
+            if(SUPER_ADMIN_EMAILS.includes(email)) {
+               // === SUPER ADMIN: LANGSUNG BUAT AKUN ===
+               const newAdmin = {
+                  email: u.email, 
+                  displayName: u.displayName || "Super Admin", 
+                  photoURL: u.photoURL || `https://ui-avatars.com/api/?name=${u.email}&background=random`,
+                  role: 'super_admin', 
+                  isProfileComplete: false, // Wajib isi profil
+                  nameChangeCount: 0, 
+                  uid: u.uid,
+                  school: '',
+                  city: '',
+                  bio: 'Super Administrator'
+               };
+               
+               await setDoc(docRef, newAdmin);
+               
+               // Hapus dari pending jika ada
+               const q = query(collection(db, 'pending_users'), where('email', '==', email));
+               const snaps = await getDocs(q);
+               snaps.forEach(async (doc) => await deleteDoc(doc.ref));
+
+               setUserData(newAdmin);
+               setView('profile-setup');
+               showToast("Akun Super Admin dibuat! Silakan lengkapi profil.");
+
+            } else {
+               // === USER BIASA: MASUK PENDING ===
+               const q = query(collection(db, 'pending_users'), where('email', '==', email));
+               const querySnap = await getDocs(q);
+               
+               if (querySnap.empty) {
+                   await addDoc(collection(db, 'pending_users'), {
+                       email, 
+                       displayName: u.displayName || "New User", 
+                       photoURL: u.photoURL || `https://ui-avatars.com/api/?name=${u.email}&background=random`,
+                       date: new Date().toLocaleDateString(), 
+                       uid: u.uid
+                   });
+               }
+               
+               // Force Logout
+               await signOut(auth);
+               setUserData(null);
+               setView('landing');
+               setShowPendingAlert(true);
+            }
           }
-          
         } else {
-          // 2. USER BELUM ADA DI DATABASE
-          if(SUPER_ADMIN_EMAILS.includes(email)) {
-             // === SUPER ADMIN FLOW: BUAT AKUN BARU ===
-             const newAdmin = {
-                email: u.email, 
-                displayName: u.displayName || "Super Admin", 
-                photoURL: u.photoURL || `https://ui-avatars.com/api/?name=${u.email}`,
-                role: 'super_admin', 
-                isProfileComplete: false, // Force isi profil
-                nameChangeCount: 0, 
-                uid: u.uid,
-                school: '',
-                city: '',
-                bio: 'Super Administrator'
-             };
-             
-             try {
-                await setDoc(docRef, newAdmin);
-                
-                // Bersihkan dari pending jika ada
-                const q = query(collection(db, 'pending_users'), where('email', '==', email));
-                const snaps = await getDocs(q);
-                snaps.forEach(async (doc) => await deleteDoc(doc.ref));
-
-                setUserData(newAdmin);
-                setView('profile-setup');
-                setProfileForm({ username: u.displayName || '', school: '', city: '' });
-                showToast("Selamat Datang Super Admin! Silakan lengkapi profil.");
-             } catch (e) {
-                console.error("Error creating admin:", e);
-                showToast("Gagal membuat akun admin.", "error");
-             }
-          } else {
-             // === NORMAL USER FLOW ===
-             // Add to pending if not exists
-             const q = query(collection(db, 'pending_users'), where('email', '==', email));
-             const querySnap = await getDocs(q);
-             
-             if (querySnap.empty) {
-                 await addDoc(collection(db, 'pending_users'), {
-                     email, 
-                     displayName: u.displayName || "New User", 
-                     photoURL: u.photoURL || `https://ui-avatars.com/api/?name=${u.email}`,
-                     date: new Date().toLocaleDateString(), 
-                     uid: u.uid
-                 });
-             }
-             
-             // Kick out
-             await signOut(auth);
-             setUserData(null);
-             setView('landing');
-             setShowPendingAlert(true);
-          }
+          // --- TIDAK ADA USER LOGIN ---
+          setUserData(null);
+          setView('landing');
         }
-      } else {
-        // No User
-        setUserData(null);
-        setView('landing');
+      } catch (err) {
+        console.error("Auth Listener Error:", err);
+        showToast("Terjadi kesalahan sistem.", "error");
+      } finally {
+        // SELALU MATIKAN LOADING
+        setIsAuthChecking(false);
+        setLoadingLogin(false);
       }
-      
-      // Stop Loading
-      setIsAuthChecking(false);
-      setLoadingLogin(false);
     });
     return () => unsubAuth();
   }, []);
@@ -464,10 +465,10 @@ export default function App() {
     try {
         if (isRegistering) {
             await createUserWithEmailAndPassword(auth, authEmail, authPassword);
-            // onAuthStateChanged akan handle logic create user/pending
+            // logic user baru ditangani di onAuthStateChanged
         } else {
             await signInWithEmailAndPassword(auth, authEmail, authPassword);
-            // onAuthStateChanged akan handle logic redirect
+            // logic user lama ditangani di onAuthStateChanged
         }
     } catch (err) {
         console.error("Auth error:", err);
@@ -477,31 +478,35 @@ export default function App() {
         if (err.code === 'auth/weak-password') errorMsg = "Password terlalu lemah (min 6 karakter).";
         
         showToast(errorMsg, "error");
-        setLoadingLogin(false); // Stop loading if error
+        setLoadingLogin(false);
     }
   };
 
   const handleLogout = async () => { await signOut(auth); setView('landing'); setShowMobileMenu(false); };
 
-  // PROFILE (Using 'user' variable)
+  // --- PROFILE SUBMIT FIX ---
   const handleProfileSubmit = async () => {
     if (!user) return;
     try {
-        await updateDoc(doc(db, 'users', user.uid), {
+        // 1. Update ke Firestore
+        const newData = {
             displayName: profileForm.username,
             school: profileForm.school,
             city: profileForm.city,
-            isProfileComplete: true,
+            isProfileComplete: true, // PENTING: Set true
             bio: userData?.bio || "Member Baru"
-        });
+        };
         
-        // Force refresh user data
+        await updateDoc(doc(db, 'users', user.uid), newData);
+        
+        // 2. Ambil data terbaru untuk update state lokal (Mencegah blank screen)
         const updatedDoc = await getDoc(doc(db, 'users', user.uid));
+        
         if (updatedDoc.exists()) {
-           setUserData(updatedDoc.data());
-           setView('dashboard');
-           sendOneSignalNotification('mobile_push', 'Kamu berhasil login Roboedu Studio');
-           showToast(`Selamat datang, ${profileForm.username}`);
+             setUserData(updatedDoc.data()); // Update state
+             setView('dashboard'); // Pindah halaman SETELAH state ada
+             sendOneSignalNotification('mobile_push', 'Kamu berhasil login Roboedu Studio');
+             showToast(`Selamat datang, ${profileForm.username}`);
         }
     } catch (e) { 
       console.error("Profile submit error:", e);
@@ -540,11 +545,7 @@ export default function App() {
               isProfileComplete: false,
               nameChangeCount: 0
           };
-          
-          // Ensure UID exists
-          if (!newUser.uid) throw new Error("UID Missing");
-
-          await setDoc(doc(db, 'users', newUser.uid), newUser);
+          await setDoc(doc(db, 'users', selectedPendingUser.uid), newUser);
           await deleteDoc(doc(db, 'pending_users', selectedPendingUser.id));
           setIsApprovalModalOpen(false); setSelectedPendingUser(null); showToast("User Disetujui!");
       } catch (e) { console.error(e); showToast("Gagal Approve: " + e.message, "error"); }
@@ -588,9 +589,6 @@ export default function App() {
             <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />
             <h1 className="text-2xl font-black text-slate-800 mb-2">Konfigurasi Hilang!</h1>
             <p className="text-slate-500 mb-4 text-sm">Website ini belum terhubung ke Firebase. Mohon masukkan <b>Environment Variables</b> (API Key) di Dashboard Vercel.</p>
-            <div className="bg-slate-100 p-4 rounded-xl text-xs text-left font-mono text-slate-600 break-all border border-slate-200">
-                VITE_FIREBASE_API_KEY=...<br/>VITE_FIREBASE_AUTH_DOMAIN=...
-            </div>
         </div>
       </div>
     );
@@ -876,17 +874,17 @@ export default function App() {
                                         value={authPassword} 
                                         onChange={e => setAuthPassword(e.target.value)}
                                     />
-                                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                                    <Key className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                                 </div>
                             </div>
 
                             <button type="submit" disabled={loadingLogin} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg hover:bg-indigo-700 flex items-center justify-center gap-3">
-                                {loadingLogin ? <Loader2 className="animate-spin"/> : <Shield size={20}/>} 
+                                {loadingLogin ? <Loader2 className="animate-spin"/> : (isRegistering ? <UserPlus size={20}/> : <Shield size={20}/>)} 
                                 {isRegistering ? "Daftar Akun Baru" : "Masuk"}
                             </button>
                         </form>
 
-                        <div className="mt-6 pt-6 border-t border-slate-100">
+                        <div className="mt-6 pt-6 border-t border-slate-100 text-center">
                             <p className="text-xs text-slate-500 font-medium mb-2">
                                 {isRegistering ? "Sudah punya akun?" : "Belum punya akun?"}
                             </p>
@@ -980,7 +978,7 @@ export default function App() {
             )}
 
             {/* Dashboard & Project Detail */}
-            {view === 'dashboard' && userData && ( // Added safety check
+            {view === 'dashboard' && userData && (
                 <div className="pt-20 animate-[fadeIn_0.3s]">
                            {(userData?.role === 'supervisor' || userData?.role === 'super_admin') && activeTeamId && (
                                <button onClick={() => { setActiveTeamId(null); setView('team-list'); }} className="mb-4 text-xs font-bold text-slate-400 hover:text-indigo-600 flex items-center gap-1"><ChevronLeft size={14}/> Kembali ke List Tim</button>
@@ -1382,8 +1380,8 @@ export default function App() {
            
            {/* READ ONLY FIELDS */}
            <div className="grid grid-cols-2 gap-4">
-               <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Sekolah</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={user?.school || '-'} /></div>
-               <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Kota</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={user?.city || '-'} /></div>
+               <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Sekolah</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={userData?.school || '-'} /></div>
+               <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Kota</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={userData?.city || '-'} /></div>
            </div>
 
            <div>
@@ -1459,7 +1457,6 @@ export default function App() {
                 <span className="bg-indigo-50 text-indigo-600 px-3 py-1 rounded-lg text-[10px] font-bold uppercase mb-4 inline-block">{selectedNews.category}</span>
                 <h2 className="text-2xl font-black text-slate-800 mb-4 leading-tight">{selectedNews.title}</h2>
                 <div className="text-sm text-slate-600 leading-relaxed bg-slate-50 p-6 rounded-[2rem] mb-4 border border-slate-100 font-medium whitespace-pre-line">{selectedNews.content}</div>
-                <div className="text-xs text-slate-400 font-bold text-right">Diposting: {selectedNews.date}</div>
             </div>
         )}
       </Modal>
