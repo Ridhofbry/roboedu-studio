@@ -41,7 +41,7 @@ let app, auth, db, googleProvider;
 
 if (API_KEY_EXISTS) {
    try {
-      final GoogleSignIn googleSignIn = GoogleSignIn();
+      final GoogleSignIn googleSignIn = GoogleSignIn(),
       final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
 
       if (googleUser != null) {
