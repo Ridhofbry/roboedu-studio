@@ -14,11 +14,12 @@ import {
 // --- PRODUCTION IMPORTS ---
 import { initializeApp } from "firebase/app";
 import { 
-  getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged 
+  getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, 
+  browserLocalPersistence, setPersistence 
 } from "firebase/auth";
 import { 
   getFirestore, doc, setDoc, getDoc, updateDoc, deleteDoc, 
-  collection, addDoc, onSnapshot, query, where, orderBy 
+  collection, addDoc, onSnapshot, query, where, orderBy, getDocs 
 } from "firebase/firestore";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
@@ -36,12 +37,15 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
+// Initialize Firebase with Error Handling
 let app, auth, db, googleProvider;
 try {
     app = initializeApp(firebaseConfig);
     auth = getAuth(app);
     db = getFirestore(app);
     googleProvider = new GoogleAuthProvider();
+    // Menggunakan persistence LOCAL untuk mengelakkan isu sesi hilang di Android
+    setPersistence(auth, browserLocalPersistence);
 } catch (error) {
     console.warn("Firebase not initialized. Check .env variables.");
 }
@@ -228,7 +232,15 @@ const WeeklyBotReport = ({ projects }) => {
         const now = new Date(); const currentDay = now.getDay(); const diffToMonday = currentDay === 0 ? 6 : currentDay - 1; 
         const startOfWeek = new Date(now); startOfWeek.setHours(0, 0, 0, 0); startOfWeek.setDate(now.getDate() - diffToMonday);
         let completed = 0; let late = 0; let onTime = 0;
-        projects.forEach(p => { if (p.status === 'Completed' && p.completedAt) { const completedDate = new Date(p.completedAt); if (completedDate >= startOfWeek) { completed++; if (p.deadline) { const deadline = new Date(p.deadline); if (completedDate > deadline) late++; else onTime++; } else { onTime++; } } } });
+        projects.forEach(p => {
+            if (p.status === 'Completed' && p.completedAt) {
+                const completedDate = new Date(p.completedAt);
+                if (completedDate >= startOfWeek) {
+                    completed++;
+                    if (p.deadline) { const deadline = new Date(p.deadline); if (completedDate > deadline) late++; else onTime++; } else { onTime++; }
+                }
+            }
+        });
         return { completed, late, onTime };
     }, [projects]);
     const getMessage = () => { if (report.completed === 0) return "Minggu ini belum ada project selesai. Ayo semangat tim!"; if (report.late > 0) return `Minggu ini produktif, namun ada ${report.late} project yang melebihi deadline.`; return `Performa Luar Biasa! ${report.completed} Project selesai tepat waktu minggu ini.`; };
@@ -319,47 +331,62 @@ export default function App() {
     if (!auth) return;
     const unsubAuth = onAuthStateChanged(auth, async (u) => {
       setCurrentUser(u);
+      
       if (u) {
         const docRef = doc(db, 'users', u.uid);
         const docSnap = await getDoc(docRef);
+        const email = u.email;
         
+        // 1. CEK APAKAH USER ADA DI DATABASE
         if (docSnap.exists()) {
-          // USER EXISTS
           const d = docSnap.data();
-          setUserData(d);
-          
-          // FORCE UPDATE SUPER ADMIN ROLE (IF MISSING)
-          if (SUPER_ADMIN_EMAILS.includes(u.email) && d.role !== 'super_admin') {
+          // Force update jika email ada di list SUPER_ADMIN_EMAILS tetapi role bukan super_admin
+          if (SUPER_ADMIN_EMAILS.includes(email) && d.role !== 'super_admin') {
              await updateDoc(docRef, { role: 'super_admin' });
              setUserData({ ...d, role: 'super_admin' });
+          } else {
+             setUserData(d);
           }
-          
-          // Redirect Logic
+
+          // Redirect sesuai status profil
           if (!d.isProfileComplete) {
              setView('profile-setup');
-             setProfileForm({ username: d.displayName || '', school: '', city: '' });
+             setProfileForm({ username: u.displayName || '', school: '', city: '' });
           } else {
              setView('dashboard');
           }
+          
         } else {
-          // USER DOES NOT EXIST IN DB
-          // IF EMAIL IS SUPER ADMIN, FORCE CREATE
-          if(SUPER_ADMIN_EMAILS.includes(u.email)) {
+          // 2. USER BELUM ADA DI DATABASE
+          if(SUPER_ADMIN_EMAILS.includes(email)) {
+             // JIKA SUPER ADMIN: BUAT AKUN LANGSUNG & REDIRECT KE PROFILE SETUP
              const newAdmin = {
-                email: u.email, displayName: u.displayName, photoURL: u.photoURL,
-                role: 'super_admin', isProfileComplete: true, nameChangeCount: 0, uid: u.uid
+                email: u.email, 
+                displayName: u.displayName, 
+                photoURL: u.photoURL,
+                role: 'super_admin', 
+                isProfileComplete: false, // Wajib isi profil dulu
+                nameChangeCount: 0, 
+                uid: u.uid
              };
              await setDoc(docRef, newAdmin);
              setUserData(newAdmin);
-             setView('dashboard');
+             
+             // Hapus dari pending jika ada
+             const q = query(collection(db, 'pending_users'), where('email', '==', email));
+             const snaps = await getDocs(q);
+             snaps.forEach(async (doc) => await deleteDoc(doc.ref));
+
+             setView('profile-setup');
              showToast("Welcome Super Admin!");
           } else {
-             // USER NOT ADMIN AND NOT IN DB -> CHECK IF PENDING
-             const q = query(collection(db, 'pending_users'), where('email', '==', u.email));
-             // In listener, we can't do much if pending except show landing
+             // JIKA BUKAN SUPER ADMIN: MUNCULKAN ALERT PENDING & LOGOUT
              setUserData(null);
              setView('landing');
-             // Optionally show "Pending" alert if user tries to do something
+             // Kita anggap user sudah ditambah ke pending saat klik tombol login
+             // Logoutkan user agar tidak ada sesi aktif tanpa data
+             await signOut(auth);
+             setShowPendingAlert(true); 
           }
         }
       } else {
@@ -395,7 +422,7 @@ export default function App() {
         setUsersList(users);
     });
 
-    // Only fetch pending users if admin
+    // Fetch Pending Users ONLY if Admin
     let unsubPending = () => {};
     if (userData?.role === 'super_admin' || userData?.role === 'supervisor') {
       unsubPending = onSnapshot(collection(db, 'pending_users'), (s) => {
@@ -430,41 +457,39 @@ export default function App() {
         const email = result.user.email;
         const uid = result.user.uid;
 
-        // Check DB
+        // Cek DB apakah user sudah ada
         const userDoc = await getDoc(doc(db, 'users', uid));
-        
+
         if (userDoc.exists()) {
-             // User exists, listener handles navigation
-        } else if (SUPER_ADMIN_EMAILS.includes(email)) {
-             // --- FORCE PROMOTE SUPER ADMIN ---
-             // Create directly in users, skip pending
-             const newAdmin = {
-                email, displayName: result.user.displayName, photoURL: result.user.photoURL, 
-                role: 'super_admin', isProfileComplete: true, nameChangeCount: 0, uid
-             };
-             await setDoc(doc(db, 'users', uid), newAdmin);
-             
-             // Cleanup if accidentally in pending (query by email)
-             // ... logic omitted for simplicity, but doc creation above is key
-             
-             setUserData(newAdmin);
-             setView('dashboard');
-             showToast("Super Admin Detected!");
+             // User sudah ada, biarkan listener onAuthStateChanged handle redirect
         } else {
-             // Normal user -> Check if already pending
-             const q = query(collection(db, 'pending_users'), where('email', '==', email));
-             // For simplicity in this single file, we just ADD to pending if not exists in users
-             // Ideally check duplicate in pending too, but simple add is safe enough
-             await addDoc(collection(db, 'pending_users'), {
-                 email, displayName: result.user.displayName, photoURL: result.user.photoURL, 
-                 date: new Date().toLocaleDateString(), uid
-             });
-             await signOut(auth);
-             setShowPendingAlert(true);
+            // User belum ada di 'users'
+            if (SUPER_ADMIN_EMAILS.includes(email)) {
+                // Biarkan listener handle force create
+            } else {
+                // Jika bukan super admin, masukkan ke pending
+                const q = query(collection(db, 'pending_users'), where('email', '==', email));
+                const querySnap = await getDocs(q);
+                
+                if (querySnap.empty) {
+                    await addDoc(collection(db, 'pending_users'), {
+                        email, displayName: result.user.displayName, photoURL: result.user.photoURL,
+                        date: new Date().toLocaleDateString(), uid
+                    });
+                }
+                // Sign out agar tidak masuk dashboard
+                await signOut(auth);
+                setShowPendingAlert(true);
+            }
         }
     } catch (err) {
+        // Handle error seperti popup closed, network error, dll
         console.error(err);
-        showToast("Login Failed: " + err.message, "error");
+        if (err.code === 'auth/popup-closed-by-user') {
+            showToast("Login dibatalkan", "error");
+        } else {
+            showToast("Login Gagal: " + err.message, "error");
+        }
     } finally {
         setLoadingLogin(false);
     }
@@ -509,7 +534,7 @@ export default function App() {
       if(!selectedPendingUser) return;
       try {
           const newUser = {
-              uid: selectedPendingUser.uid, // Use UID from pending
+              uid: selectedPendingUser.uid, 
               email: selectedPendingUser.email,
               displayName: selectedPendingUser.displayName,
               photoURL: selectedPendingUser.photoURL,
@@ -519,9 +544,7 @@ export default function App() {
               nameChangeCount: 0
           };
           
-          // Create in users
           await setDoc(doc(db, 'users', selectedPendingUser.uid), newUser);
-          // Delete from pending using its DOC ID
           await deleteDoc(doc(db, 'pending_users', selectedPendingUser.id));
           
           setIsApprovalModalOpen(false); setSelectedPendingUser(null);
@@ -639,6 +662,7 @@ export default function App() {
       }, 'neutral');
   };
 
+  // Tim 5 Logic
   const handleProposeConcept = () => {
     if (!activeProject.finalLink) return showToast("Isi link!", "error");
     handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Pending' });
@@ -694,6 +718,7 @@ export default function App() {
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
   `;
 
+  // --- RENDER ---
   return (
     <div className="min-h-screen bg-[#F8FAFC] font-sans text-slate-800 relative w-full overflow-x-hidden selection:bg-indigo-200 selection:text-indigo-900">
       <style>{globalStyles}</style>
@@ -718,6 +743,7 @@ export default function App() {
             
             <div className="hidden md:flex items-center gap-4">
                 <button onClick={() => setView('landing')} className={`text-sm font-bold transition-colors ${view === 'landing' ? 'text-indigo-600' : 'text-slate-500 hover:text-indigo-600'}`}>Beranda</button>
+                {/* ARCHIVE BUTTON REMOVED FROM NAVBAR - NOW IN DASHBOARD/HOME */}
 
                 {currentUser ? (
                     <div className="flex items-center gap-3 pl-4 border-l border-slate-200">
@@ -725,6 +751,7 @@ export default function App() {
                             <p className="text-xs font-bold text-slate-800">{userData?.displayName || 'User'}</p>
                             <p className="text-[10px] text-indigo-600 font-bold uppercase tracking-wider">{userData?.role?.replace('_', ' ')}</p>
                         </div>
+                        {/* Only show Settings if profile is complete */}
                         {userData?.isProfileComplete && (
                             <button onClick={() => { setEditProfileData(userData); setIsEditProfileOpen(true); }} className="relative group">
                                 <img src={userData?.photoURL} alt="User" className="w-10 h-10 rounded-full border-2 border-indigo-100 bg-slate-200 object-cover group-hover:border-indigo-300 transition-colors"/>
@@ -796,7 +823,6 @@ export default function App() {
         </div>
       )}
 
-      {/* --- CONTENT AREA --- */}
       <div className="flex-1 p-4 md:p-8 pb-32 relative z-10 w-full min-h-screen">
         <div className="max-w-7xl mx-auto w-full">
 
@@ -830,7 +856,7 @@ export default function App() {
                            <button onClick={() => setShowPendingAlert(false)} className="p-2 text-amber-400 hover:text-amber-700"><X size={20}/></button>
                        </div>
                    )}
-
+                   
                    <div className="text-center mb-12">
                        <span className="inline-block py-1 px-3 rounded-full bg-indigo-50 text-indigo-600 text-[10px] font-black uppercase tracking-widest mb-4 border border-indigo-100">Portal Internal v5.0</span>
                        <h1 className="text-4xl md:text-6xl font-black text-slate-800 mb-4 tracking-tight leading-tight">Pusat Produksi <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-purple-600">Digital</span></h1>
@@ -974,14 +1000,11 @@ export default function App() {
                             <div className="bg-white/20 w-14 h-14 rounded-2xl flex items-center justify-center backdrop-blur-sm shadow-inner relative z-10"><LinkIcon size={28}/></div>
                             <div className="relative z-10"><h3 className="font-bold text-2xl leading-tight mb-1">Link Hasil</h3><p className="text-sm opacity-80 font-medium">Kumpulan Final Drive Project</p></div>
                         </div>
-                        {/* ARCHIVE CARD IN DASHBOARD FOR ADMINS */}
-                        {(userData?.role === 'supervisor' || userData?.role === 'super_admin') && (
                         <div onClick={() => setView('archive')} className="bg-slate-800 text-white p-8 rounded-[2rem] shadow-xl flex flex-col justify-between cursor-pointer hover:scale-[1.02] transition-transform h-48 relative overflow-hidden group">
                             <div className="absolute bottom-0 left-0 p-32 bg-indigo-500/20 rounded-full blur-3xl -ml-16 -mb-16"></div>
                             <div className="bg-white/10 w-14 h-14 rounded-2xl flex items-center justify-center backdrop-blur-sm shadow-inner relative z-10"><Archive size={28}/></div>
                             <div className="relative z-10"><h3 className="font-bold text-2xl leading-tight mb-1">Arsip Lama</h3><p className="text-sm opacity-80 font-medium">History Data & Recap</p></div>
                         </div>
-                        )}
                     </div>
                     <div className="mb-6 flex items-center justify-between">
                         <h3 className="font-bold text-slate-700 text-xl flex items-center gap-2"><Users size={20} className="text-indigo-600"/> Daftar Tim Produksi</h3>
@@ -1028,8 +1051,13 @@ export default function App() {
                                             setIsAddProjectOpen(true); 
                                         }} className="bg-slate-900 text-white px-4 py-2 rounded-full font-bold text-xs shadow-lg flex items-center gap-2"><Plus size={14}/> Project Baru</button>
                                     )}
-                                    {/* ARCHIVE BUTTON IN DASHBOARD */}
-                                    <button onClick={() => setView('archive')} className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-full font-bold text-xs shadow-sm flex items-center gap-2 hover:bg-slate-50"><Archive size={14}/> Arsip Project</button>
+                                    {/* CREATOR ARCHIVE BUTTON IN DASHBOARD */}
+                                    {(userData?.role === 'creator' || userData?.role === 'tim_khusus') && (
+                                        <button onClick={() => setView('archive')} className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-full font-bold text-xs shadow-sm flex items-center gap-2 hover:bg-slate-50"><Archive size={14}/> Arsip Project</button>
+                                    )}
+                                    {(userData?.role === 'supervisor' || userData?.role === 'super_admin') && (
+                                        <button onClick={() => setView('archive')} className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-full font-bold text-xs shadow-sm flex items-center gap-2 hover:bg-slate-50"><Archive size={14}/> Arsip Project</button>
+                                    )}
                                </div>
                            </div>
                            
@@ -1364,35 +1392,64 @@ export default function App() {
               <div className="flex gap-3"><button onClick={() => setConfirmModal({...confirmModal, isOpen: false})} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold">Batal</button><button onClick={executeConfirmAction} className={`flex-1 py-3 text-white rounded-xl font-bold ${confirmModal.type === 'danger' ? 'bg-red-500' : 'bg-blue-600'}`}>Ya, Lanjutkan</button></div>
           </div>
       </Modal>
-      
-      {/* Upload Asset Modal */}
+
+      {/* --- ADD PROJECT MODAL WITH DEADLINE --- */}
+      <Modal isOpen={isAddProjectOpen} onClose={() => setIsAddProjectOpen(false)} title="Project Baru">
+           <div className="space-y-4">
+               <div><label className="block text-xs font-bold text-slate-500 mb-1">Judul Project</label><input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none font-medium" placeholder="Judul Project..." value={newProjectForm.title} onChange={e => setNewProjectForm({...newProjectForm, title: e.target.value})} /></div>
+               {newProjectForm.isBigProject && (
+                   <div className="animate-[fadeIn_0.3s]">
+                       <label className="block text-xs font-bold text-slate-500 mb-1">Deadline Project</label>
+                       <input type="date" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none font-medium" value={newProjectForm.deadline} onChange={e => setNewProjectForm({...newProjectForm, deadline: e.target.value})} />
+                   </div>
+               )}
+               <button onClick={handleAddProject} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold">Buat Project</button>
+           </div>
+      </Modal>
+
+      {/* --- ADD ASSET MODAL (MISSING FIX) --- */}
       <Modal isOpen={isAddAssetOpen} onClose={() => setIsAddAssetOpen(false)} title="Upload Aset Baru">
          <div className="space-y-4">
-             <div><label className="block text-xs font-bold text-slate-500 mb-1">Nama File</label><input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none" placeholder="Contoh: Logo.png" value={newAssetForm.title} onChange={e=>setNewAssetForm({...newAssetForm, title: e.target.value})}/></div>
+             <div><label className="block text-xs font-bold text-slate-500 mb-1">Nama File</label><input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:bg-white focus:border-indigo-500 transition-all font-medium" placeholder="Contoh: Logo.png" value={newAssetForm.title} onChange={e=>setNewAssetForm({...newAssetForm, title: e.target.value})}/></div>
              <div className="flex gap-3">
                  <div className="flex-1"><label className="block text-xs font-bold text-slate-500 mb-1">Tipe File</label><select className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none flex-1 font-medium cursor-pointer" value={newAssetForm.type} onChange={e=>setNewAssetForm({...newAssetForm, type: e.target.value})}><option value="folder">Folder</option><option value="audio">Audio</option><option value="video">Video</option></select></div>
                  <div className="w-1/3"><label className="block text-xs font-bold text-slate-500 mb-1">Ukuran (MB)</label><input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none font-medium" placeholder="Size" value={newAssetForm.size} onChange={e=>setNewAssetForm({...newAssetForm, size: e.target.value})}/></div>
              </div>
-             <button onClick={handleAddAsset} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg">Simpan Aset</button>
+             <button onClick={handleAddAsset} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg mt-2 hover:bg-indigo-700 transition-all">Simpan Aset</button>
          </div>
       </Modal>
 
-      {/* AI Modal */}
-      <Modal isOpen={showAIModal} onClose={() => setShowAIModal(false)} title="AI Script Assistant">
-          <div className="space-y-4">
-              <div className="bg-indigo-50 p-4 rounded-2xl text-xs text-indigo-800 font-medium flex items-center gap-2 mb-2"><Sparkles size={14}/> AI akan membuat draft naskah berdasarkan ide Anda.</div>
-              <textarea className="w-full h-32 p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none resize-none focus:ring-2 focus:ring-indigo-200" placeholder="Contoh: Buat naskah video cinematic..." value={aiPrompt} onChange={e=>setAiPrompt(e.target.value)}/>
-              <div className={`transition-all duration-300 ${aiResult || isAILoading ? 'opacity-100 max-h-60' : 'opacity-0 max-h-0'} overflow-hidden`}><div className="bg-slate-900 text-slate-200 p-6 rounded-2xl text-xs whitespace-pre-line font-mono leading-relaxed border border-slate-700 shadow-inner custom-scrollbar overflow-y-auto max-h-60">{isAILoading ? <div className="flex items-center gap-2"><Loader2 className="animate-spin" size={14}/> Sedang berpikir...</div> : aiResult}</div></div>
-              <div className="flex gap-3 mt-2"><button disabled={isAILoading || !aiPrompt} onClick={handleScript} className="flex-1 py-4 bg-indigo-600 disabled:bg-slate-300 text-white rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg"><Wand2 size={18}/> {aiResult ? "Generate Ulang" : "Buat Naskah"}</button>{aiResult && !isAILoading && (<button onClick={() => { handleUpdateProjectFirestore(activeProject.id, { script: aiResult }); setShowAIModal(false); showToast("Naskah diterapkan!"); }} className="flex-1 py-4 bg-emerald-500 text-white rounded-2xl font-bold shadow-lg">Gunakan</button>)}</div>
-          </div>
-      </Modal>
-      
-      <Modal isOpen={isEditLogoOpen} onClose={() => setIsEditLogoOpen(false)} title="Edit Logo Sekolah">
-          <div className="space-y-4">
-              <input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none" value={logoForm} onChange={e => setLogoForm(e.target.value)} placeholder="Paste link logo..."/>
-              {logoForm.includes('drive.google.com') && <button onClick={() => setLogoForm(autoCorrectGDriveLink(logoForm))} className="w-full py-2 bg-amber-100 text-amber-700 rounded-xl text-xs font-bold flex items-center justify-center gap-2"><Zap size={14}/> Auto-Fix Link GDrive</button>}
-              <button onClick={handleSaveLogo} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold">Simpan Logo</button>
-          </div>
+      {/* --- EDIT PROFILE MODAL --- */}
+      <Modal isOpen={isEditProfileOpen} onClose={() => setIsEditProfileOpen(false)} title="Edit Profil">
+        <div className="space-y-4">
+           <div>
+               <label className="block text-xs font-bold text-slate-500 mb-1">Nama Lengkap</label>
+               <input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:border-indigo-500" value={editProfileData.displayName} onChange={e => setEditProfileData({...editProfileData, displayName: e.target.value})} />
+               <p className="text-[10px] text-slate-400 mt-1">Kesempatan ganti nama tersisa: <span className="font-bold text-indigo-500">{2 - (userData?.nameChangeCount || 0)}x</span></p>
+           </div>
+           <div><label className="block text-xs font-bold text-slate-500 mb-1">Bio Singkat</label><textarea className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:border-indigo-500 h-24 resize-none" value={editProfileData.bio} onChange={e => setEditProfileData({...editProfileData, bio: e.target.value})} /></div>
+           
+           {/* READ ONLY FIELDS */}
+           <div className="grid grid-cols-2 gap-4">
+               <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Sekolah</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={user?.school || '-'} /></div>
+               <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Kota</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={user?.city || '-'} /></div>
+           </div>
+
+           <div>
+               <label className="block text-xs font-bold text-slate-500 mb-1">Upload Foto (Auto-Resize)</label>
+               <button onClick={() => { 
+                   // Simulate file upload
+                   const dummyPhoto = `https://api.dicebear.com/7.x/avataaars/svg?seed=${Date.now()}`;
+                   setEditProfileData({...editProfileData, photoURL: dummyPhoto});
+                   showToast("Foto berhasil diupload (Simulasi)");
+               }} className="w-full p-4 bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 flex flex-col items-center justify-center gap-2 hover:bg-slate-100 transition-colors">
+                   <Upload size={24}/>
+                   <span>Klik untuk ganti foto dari Galeri</span>
+               </button>
+               {editProfileData.photoURL !== userData?.photoURL && <div className="text-[10px] text-emerald-500 font-bold mt-2 text-center">Foto baru siap disimpan!</div>}
+           </div>
+           <button onClick={handleUpdateProfile} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold transition-all shadow-lg flex items-center justify-center gap-2"><Save size={18}/> Simpan Profil</button>
+        </div>
       </Modal>
 
       {/* --- MODAL APPROVAL USER --- */}
@@ -1434,6 +1491,14 @@ export default function App() {
            <div><label className="block text-xs font-bold text-slate-500 mb-1">Konten Lengkap</label><textarea className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:border-indigo-500 h-40 resize-none" value={newsForm.content} onChange={e => setNewsForm({...newsForm, content: e.target.value})} /></div>
            <button onClick={handleSaveNews} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold transition-all shadow-lg flex items-center justify-center gap-2"><Save size={18}/> Simpan Berita</button>
         </div>
+      </Modal>
+
+      <Modal isOpen={isEditLogoOpen} onClose={() => setIsEditLogoOpen(false)} title="Edit Logo Sekolah">
+          <div className="space-y-4">
+              <input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none" value={logoForm} onChange={e => setLogoForm(e.target.value)} placeholder="Paste link logo..."/>
+              {logoForm.includes('drive.google.com') && <button onClick={() => setLogoForm(autoCorrectGDriveLink(logoForm))} className="w-full py-2 bg-amber-100 text-amber-700 rounded-xl text-xs font-bold flex items-center justify-center gap-2"><Zap size={14}/> Auto-Fix Link GDrive</button>}
+              <button onClick={handleSaveLogo} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold">Simpan Logo</button>
+          </div>
       </Modal>
 
       {/* --- DETAIL BERITA MODAL --- */}
