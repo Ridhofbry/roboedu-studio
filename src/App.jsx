@@ -30,19 +30,6 @@ import {
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// --- HELPER FUNCTION FOR DATES ---
-const formatFirestoreDate = (date) => {
-    if (!date) return '-';
-    try {
-        if (typeof date === 'string') return date;
-        if (date?.toDate && typeof date.toDate === 'function') return date.toDate().toLocaleDateString();
-        if (date?.seconds) return new Date(date.seconds * 1000).toLocaleDateString();
-        return 'Invalid Date';
-    } catch (e) {
-        return 'Date Error';
-    }
-};
-
 /* ========================================================================
    1. KONFIGURASI API & SAFETY CHECK
    ======================================================================== */
@@ -96,25 +83,12 @@ const TEAMS = [
     { id: 'team-5', name: 'Tim 5 (Special)', isSpecial: true },
 ];
 
-// Comprehensive City Data (Java, Sumatra, Eastern Indonesia)
 const INDONESIAN_CITIES = [
-    // SUMATERA
-    "Banda Aceh", "Medan", "Pematang Siantar", "Padang", "Bukittinggi", "Pekanbaru", "Dumai",
-    "Jambi", "Palembang", "Bengkulu", "Bandar Lampung", "Metro", "Pangkal Pinang", "Batam", "Tanjung Pinang",
-    // JAWA (LENGKAP)
-    "Jakarta Pusat", "Jakarta Selatan", "Jakarta Barat", "Jakarta Timur", "Jakarta Utara", "Kepulauan Seribu",
-    "Bogor", "Depok", "Tangerang", "Tangerang Selatan", "Bekasi", "Bandung", "Cimahi", "Tasikmalaya", "Sukabumi", "Cirebon", "Indramayu", "Karawang",
-    "Semarang", "Surakarta (Solo)", "Magelang", "Pekalongan", "Tegal", "Salatiga", "Yogyakarta", "Sleman", "Bantul",
-    "Surabaya", "Malang", "Batu", "Kediri", "Blitar", "Madiun", "Mojokerto", "Probolinggo", "Pasuruan", "Banyuwangi", "Jember", "Gresik", "Sidoarjo",
-    // BALI & NUSA TENGGARA
-    "Denpasar", "Singaraja", "Mataram", "Bima", "Kupang",
-    // KALIMANTAN
-    "Pontianak", "Singkawang", "Palangka Raya", "Banjarmasin", "Banjarbaru", "Samarinda", "Balikpapan", "Bontang", "Tarakan",
-    // SULAWESI
-    "Makassar", "Parepare", "Palopo", "Manado", "Bitung", "Palu", "Kendari", "Gorontalo",
-    // INDONESIA TIMUR (MALUKU & PAPUA)
-    "Ambon", "Tual", "Ternate", "Tidore Kepulauan",
-    "Jayapura", "Sorong", "Manokwari", "Merauke", "Timika", "Biak", "Wamena", "Fakfak"
+    "Jakarta Pusat", "Jakarta Selatan", "Jakarta Barat", "Jakarta Timur", "Jakarta Utara",
+    "Surabaya", "Bandung", "Medan", "Semarang", "Makassar", "Palembang", "Tangerang",
+    "Depok", "Bekasi", "Bogor", "Malang", "Yogyakarta", "Surakarta", "Denpasar",
+    "Batam", "Pekanbaru", "Bandar Lampung", "Padang", "Samarinda", "Balikpapan",
+    "Banjarmasin", "Pontianak", "Manado", "Mataram", "Jayapura"
 ].sort();
 
 const WORKFLOW_STEPS = [
@@ -349,7 +323,7 @@ export default function App() {
         projects.forEach(p => {
             if (p.status === 'Completed' && p.completedAt) {
                 const d = new Date(p.completedAt);
-                if (d >= start && (teamId === 'all' || String(p.teamId) === String(teamId))) {
+                if (d >= start && (teamId === 'all' || p.teamId === teamId)) {
                     const idx = d.getDay() === 0 ? 6 : d.getDay() - 1;
                     data[idx]++;
                 }
@@ -370,22 +344,11 @@ export default function App() {
                     const docSnap = await getDoc(docRef);
                     if (docSnap.exists()) {
                         const d = docSnap.data();
-
-                        // --- AUTO-FIX: Typo 'tema-' -> 'team-' ---
-                        if (d.teamId && typeof d.teamId === 'string' && d.teamId.includes('tema-')) {
-                            const fixedId = d.teamId.replace('tema-', 'team-');
-                            console.log(`🔵 FIXING TYPO: ${d.teamId} -> ${fixedId}`);
-                            await updateDoc(docRef, { teamId: fixedId });
-                            d.teamId = fixedId; // Use fixed value locally
-                        }
-
                         if (SUPER_ADMIN_EMAILS.includes(u.email) && d.role !== 'super_admin') {
                             await updateDoc(docRef, { role: 'super_admin' });
                             setUserData({ ...d, role: 'super_admin' });
-                            localStorage.setItem('robo_session', JSON.stringify({ email: u.email, name: d.displayName || u.email, photo: d.photoURL }));
                         } else {
                             setUserData(d);
-                            localStorage.setItem('robo_session', JSON.stringify({ email: u.email, name: d.displayName || u.email, photo: d.photoURL }));
                         }
                         // Redirect Logic
                         if (!d.isProfileComplete) {
@@ -431,13 +394,11 @@ export default function App() {
                             setProfileForm({ username: '', school: '', city: '' });
                             console.log('🔵 DEBUG: Profile form reset');
                         } else {
-                            // Cek apakah sudah ada di pending list?
                             const q = query(collection(db, 'pending_users'), where('email', '==', u.email));
                             const querySnap = await getDocs(q);
-
-                            // Jika user tidak ada di DB User & tidak ada di Pending -> Berarti Ghost User / Error Register
-                            // Kita tidak otomatis buat di sini lagi, karena sudah ditangani di handleEmailAuth
-
+                            if (querySnap.empty) {
+                                await addDoc(collection(db, 'pending_users'), { email: u.email, displayName: "New User", photoURL: `https://ui-avatars.com/api/?name=${u.email}`, date: new Date().toLocaleDateString(), uid: u.uid });
+                            }
                             await signOut(auth);
                             setUserData(null);
                             setView('landing');
@@ -458,66 +419,26 @@ export default function App() {
         return () => unsubAuth();
     }, []);
 
-    // --- DATA LISTENERS ---
-    // --- DATA LISTENERS ---
+    // --- WELCOME TOAST ---
     useEffect(() => {
-        // OneSignal Initialization (Mount Only)
-        if (window.OneSignalDeferred && ONESIGNAL_APP_ID) {
-            window.OneSignalDeferred.push(async function (OneSignal) {
-                await OneSignal.init({ appId: ONESIGNAL_APP_ID, notifyButton: { enable: true }, allowLocalhostAsSecureOrigin: true });
-                OneSignal.Slidedown.promptPush();
-            });
+        if (userData?.teamId && userData?.displayName && !sessionStorage.getItem('welcome_toast_shown')) {
+            const teamName = TEAMS.find(t => t.id === userData.teamId)?.name || 'Tim';
+            showToast(`Selamat Datang di ${teamName}, ${userData.displayName.split(' ')[0]}!`);
+            sessionStorage.setItem('welcome_toast_shown', 'true');
         }
-    }, []);
+    }, [userData]);
 
-    // --- DATA LISTENERS (PUBLIC) ---
+    // --- DATA LISTENERS ---
     useEffect(() => {
         if (!db) return;
-        const hPublic = (ctx) => (err) => console.log(`Public stream ${ctx} closed`);
-
-        // News & Config (Always Run)
-        const unsubNews = onSnapshot(collection(db, 'news'), (s) => setNews(s.docs.map(d => ({ id: d.id, ...d.data() }))), hPublic("News"));
-        const unsubConfig = onSnapshot(doc(db, 'site_config', 'main'), (d) => { if (d.exists()) { const data = d.data(); if (data.logo) setSiteLogo(data.logo); if (data.weekly) setWeeklyContent(data.weekly); } }, hPublic("Config"));
-        return () => { unsubNews(); unsubConfig(); };
+        const unsubProj = onSnapshot(collection(db, 'projects'), (s) => setProjects(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+        const unsubNews = onSnapshot(collection(db, 'news'), (s) => setNews(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+        const unsubAssets = onSnapshot(collection(db, 'assets'), (s) => setAssets(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+        const unsubConfig = onSnapshot(doc(db, 'site_config', 'main'), (d) => {
+            if (d.exists()) { const data = d.data(); if (data.logo) setSiteLogo(data.logo); if (data.weekly) setWeeklyContent(data.weekly); }
+        });
+        return () => { unsubProj(); unsubNews(); unsubAssets(); unsubConfig(); };
     }, []);
-
-    // --- DATA LISTENERS (PRIVATE) ---
-    useEffect(() => {
-        if (!db || !user) { setProjects([]); setAssets([]); return; }
-
-        // Error Handler
-        const handleDbError = (context) => (error) => {
-            console.error(`Error fetching ${context}:`, error);
-            if (error.code === 'permission-denied') {
-                if (user) showToast(`Akses Ditolak: ${context}`, "error");
-            }
-        };
-
-        const unsubProj = onSnapshot(collection(db, 'projects'),
-            (s) => setProjects(s.docs.map(d => ({ id: d.id, ...d.data() }))),
-            handleDbError("Projects")
-        );
-
-
-
-        const unsubAssets = onSnapshot(collection(db, 'assets'),
-            (s) => setAssets(s.docs.map(d => ({ id: d.id, ...d.data() }))),
-            handleDbError("Assets")
-        );
-
-
-
-        return () => { unsubProj(); unsubAssets(); };
-    }, [user]);
-
-    // --- AUTO-SYNC ACTIVE PROJECT ---
-    // Fixes issue where checklist updates don't show immediately
-    useEffect(() => {
-        if (activeProject && projects.length > 0) {
-            const updated = projects.find(p => p.id === activeProject.id);
-            if (updated) setActiveProject(updated);
-        }
-    }, [projects]);
 
     useEffect(() => {
         if (!db) return;
@@ -543,23 +464,7 @@ export default function App() {
 
     // --- HANDLERS ---
     const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); };
-    // STRICT SEQUENCE LOCK: Enforce step-by-step progress
-    const isTaskLocked = (taskId, completedTasks) => {
-        const idx = ALL_TASK_IDS.indexOf(taskId);
-
-        // 1. Basic Sequential Lock (Must complete previous task first)
-        if (idx > 0 && !completedTasks.includes(ALL_TASK_IDS[idx - 1])) return true;
-
-        // 2. Gatekeeper Logic (Special Step 4 -> Step 5 Block)
-        // If current task is in Step 5 (Final), check if Project is Approved
-        const step5Tasks = ['t5-1', 't5-2'];
-        if (step5Tasks.includes(taskId)) {
-            // Task in Final Step is LOCKED if Project is NOT Approved yet
-            if (!activeProject?.isApproved) return true;
-        }
-
-        return false;
-    };
+    const isTaskLocked = (taskId, completedTasks) => { const idx = ALL_TASK_IDS.indexOf(taskId); return idx > 0 && !completedTasks.includes(ALL_TASK_IDS[idx - 1]); };
     const autoCorrectGDriveLink = (url) => { const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/); return match && match[1] ? `https://lh3.googleusercontent.com/d/${match[1]}` : url; };
 
     const requestConfirm = (title, message, action, type = 'danger') => { setConfirmModal({ isOpen: true, title, message, action, type }); };
@@ -572,54 +477,20 @@ export default function App() {
         setShowPendingAlert(false);
         try {
             if (isRegistering) {
-                // EXPLICIT REGISTRATION FLOW
-                const userCredential = await createUserWithEmailAndPassword(auth, authEmail, authPassword);
-                const u = userCredential.user;
-
-                // 1. Create Pending User Doc explicitly
-                await addDoc(collection(db, 'pending_users'), {
-                    email: u.email,
-                    displayName: "New Member",
-                    photoURL: `https://ui-avatars.com/api/?name=${u.email}&background=random`,
-                    date: new Date().toLocaleDateString(),
-                    uid: u.uid
-                });
-
-                // 2. Immediate Sign Out (prevent auto-login)
-                await signOut(auth);
-
-                // 3. UI Feedback
-                setShowPendingAlert(true);
-                setView('landing');
-                showToast("Registrasi berhasil! Tunggu admin.", "success");
+                await createUserWithEmailAndPassword(auth, authEmail, authPassword);
             } else {
                 await signInWithEmailAndPassword(auth, authEmail, authPassword);
-                // Save session with password for Quick Auto-Login (Insecure but requested)
-                // Using basic Base64 encoding to avoid plain text
-                const sessionData = JSON.parse(localStorage.getItem('robo_session') || '{}');
-                localStorage.setItem('robo_session', JSON.stringify({ ...sessionData, email: authEmail, pass: btoa(authPassword) }));
             }
         } catch (err) {
             let errorMsg = err.message;
             if (err.code === 'auth/invalid-credential') errorMsg = "Email atau password salah.";
             if (err.code === 'auth/email-already-in-use') errorMsg = "Email ini sudah terdaftar.";
             showToast(errorMsg, "error");
-        } finally {
             setLoadingLogin(false);
         }
     };
 
-    const handleLogout = async () => {
-        requestConfirm("Yakin Keluar?", "Anda akan kembali ke halaman utama.", async () => {
-            setLoadingLogin(true); // Show loading
-            setTimeout(async () => {
-                await signOut(auth);
-                setView('landing');
-                setShowMobileMenu(false);
-                setLoadingLogin(false);
-            }, 800); // Artificial delay for smooth UX
-        }, 'danger');
-    };
+    const handleLogout = async () => { await signOut(auth); setView('landing'); setShowMobileMenu(false); };
 
     // PROFILE
     const handleProfileSubmit = async () => {
@@ -759,96 +630,13 @@ export default function App() {
     };
     const handleRemoveImage = (index) => { const newImages = [...activeProject.previewImages]; newImages[index] = null; handleUpdateProjectFirestore(activeProject.id, { previewImages: newImages }); };
     const handleImageSubmit = async () => { if (imageUploadState.slotIndex !== null) { const newImages = [...activeProject.previewImages]; newImages[imageUploadState.slotIndex] = imageUploadState.urlInput; await handleUpdateProjectFirestore(activeProject.id, { previewImages: newImages }); setImageUploadState({ isOpen: false, slotIndex: null, urlInput: '' }); showToast("Foto tersimpan!"); } };
-    // --- NOTIFICATION HELPERS ---
-    const getTeamName = (proj) => TEAMS.find(t => t.id === proj.teamId)?.name || 'Unknown Team';
-
-    const handleSubmitPreview = (proj) => {
-        if (!proj.previewLink) return showToast("Link kosong!", "error");
-
-        // VALIDATION: Must be Google Drive
-        if (!proj.previewLink.includes('drive.google.com') && !proj.previewLink.includes('docs.google.com')) {
-            return showToast("Wajib Link Google Drive!", "error");
-        }
-
-        requestConfirm("Kirim Preview?", "Notifikasi akan dikirim ke Supervisor.", () => {
-            handleUpdateProjectFirestore(proj.id, { status: "Preview Submitted" });
-            // 1. Notify Supervisor
-            sendOneSignalNotification('supervisor', `Review preview: "${proj.title}"`, getTeamName(proj));
-            // 2. Notify Creator (Confirmation)
-            sendOneSignalNotification('creator', `Preview Terkirim: "${proj.title}"`, getTeamName(proj));
-
-            showToast("Preview Terkirim ke Supervisor! 📤");
-        }, 'neutral');
-    };
-
-    const handleApprovalAction = (isApproved, feedback) => {
-        if (!isApproved && !feedback) return showToast("Isi revisi!", "error");
-
-        const statusMsg = isApproved ? "Preview Approved" : "Revisi Baru";
-
-        requestConfirm(isApproved ? "Approve Preview?" : "Kirim Revisi?", `Tim ${getTeamName(activeProject)} akan dapat notifikasi.`, () => {
-            handleUpdateProjectFirestore(activeProject.id, {
-                isApproved,
-                status: isApproved ? "Approved" : "Revision Needed",
-                feedback: isApproved ? "" : feedback
-            });
-            sendOneSignalNotification('creator', statusMsg, getTeamName(activeProject));
-            showToast(isApproved ? "Approved! Tim diberitahu. ✅" : "Revisi Terkirim! 📢");
-        }, isApproved ? 'success' : 'danger');
-    };
-
-    const handleSubmitFinalRegular = (proj) => {
-        if (!proj.finalLink) return showToast("Link kosong!", "error");
-
-        // VALIDATION: Must be Google Drive
-        if (!proj.finalLink.includes('drive.google.com') && !proj.finalLink.includes('docs.google.com')) {
-            return showToast("Wajib Link Google Drive!", "error");
-        }
-
-        requestConfirm("Submit Final?", "Project akan ditandai SELESAI & Masuk Arsip.", () => {
-            handleUpdateProjectFirestore(proj.id, { status: "Completed", progress: 100, completedAt: new Date().toISOString() });
-            sendOneSignalNotification('supervisor', `FINAL SUBMIT: ${proj.title}`, getTeamName(proj));
-
-            // Notify Creator too (Validation)
-            sendOneSignalNotification('creator', `Sukses Submit Final: ${proj.title}`, getTeamName(proj));
-
-            setView('dashboard');
-            showToast("Project Selesai! 🎉");
-        }, 'neutral');
-    };
-
-    const handleProposeConcept = () => {
-        if (!activeProject.finalLink) return showToast("Isi link!", "error");
-        handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Pending' });
-        sendOneSignalNotification('supervisor', `Pengajuan: ${activeProject.title}`, 'Tim 5');
-        sendOneSignalNotification('creator', `Konsep Diajukan: ${activeProject.title}`, 'Tim 5');
-    };
-
-    const handleReviewProposal = (isAcc, feedback) => {
-        if (isAcc) {
-            handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Approved', feedback: '' });
-            sendOneSignalNotification('creator', `Konsep DISETUJUI.`, 'Tim 5');
-        } else {
-            if (!feedback) return showToast("Isi pesan!", "error");
-            handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Revision', feedback });
-            sendOneSignalNotification('creator', `REVISI Konsep: ${feedback}`, 'Tim 5');
-        }
-    };
-
-    const handleRePropose = () => {
-        handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Pending' });
-        sendOneSignalNotification('supervisor', `Pengajuan ULANG: "${activeProject.title}"`, 'Tim 5');
-        sendOneSignalNotification('creator', `Revisi Dikirim: "${activeProject.title}"`, 'Tim 5');
-    };
-
-    const handleSubmitFinalTim5 = () => {
-        requestConfirm("Yakin Submit?", "Project selesai.", () => {
-            handleUpdateProjectFirestore(activeProject.id, { status: "Completed", progress: 100, completedAt: new Date().toISOString() });
-            sendOneSignalNotification('supervisor', `FINAL SUBMIT Tim 5: ${activeProject.title}`, 'Tim 5');
-            sendOneSignalNotification('creator', `Sukses Submit Final: ${activeProject.title}`, 'Tim 5');
-            setView('dashboard');
-        }, 'neutral');
-    };
+    const handleSubmitPreview = (proj) => { if (!proj.previewLink) return showToast("Link kosong!", "error"); handleUpdateProjectFirestore(proj.id, { status: "Preview Submitted" }); sendOneSignalNotification('supervisor', `Review preview: "${proj.title}"`, TEAMS.find(t => t.id === proj.teamId)?.name); };
+    const handleApprovalAction = (isApproved, feedback) => { if (!isApproved && !feedback) return showToast("Isi revisi!", "error"); handleUpdateProjectFirestore(activeProject.id, { isApproved, status: isApproved ? "Approved" : "Revision Needed", feedback: isApproved ? "" : feedback }); sendOneSignalNotification('creator', isApproved ? "Preview Approved" : "Revisi Baru", TEAMS.find(t => t.id === activeProject.teamId)?.name); };
+    const handleSubmitFinalRegular = (proj) => { if (!proj.finalLink) return showToast("Link kosong!", "error"); requestConfirm("Submit Final?", "Project ke Arsip.", () => { handleUpdateProjectFirestore(proj.id, { status: "Completed", progress: 100, completedAt: new Date().toISOString() }); sendOneSignalNotification('supervisor', `FINAL SUBMIT: ${proj.title}`, TEAMS.find(t => t.id === proj.teamId)?.name); setView('dashboard'); }, 'neutral'); };
+    const handleProposeConcept = () => { if (!activeProject.finalLink) return showToast("Isi link!", "error"); handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Pending' }); sendOneSignalNotification('supervisor', `Pengajuan: ${activeProject.title}`, 'Tim 5'); };
+    const handleReviewProposal = (isAcc, feedback) => { if (isAcc) { handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Approved', feedback: '' }); sendOneSignalNotification('creator', `Konsep DISETUJUI.`, 'Tim 5'); } else { if (!feedback) return showToast("Isi pesan!", "error"); handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Revision', feedback }); sendOneSignalNotification('creator', `REVISI Konsep: ${feedback}`, 'Tim 5'); } };
+    const handleRePropose = () => { handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Pending' }); sendOneSignalNotification('supervisor', `Pengajuan ULANG: "${activeProject.title}"`, 'Tim 5'); };
+    const handleSubmitFinalTim5 = () => { requestConfirm("Yakin Submit?", "Project selesai.", () => { handleUpdateProjectFirestore(activeProject.id, { status: "Completed", progress: 100, completedAt: new Date().toISOString() }); sendOneSignalNotification('supervisor', `FINAL SUBMIT Tim 5: ${activeProject.title}`, 'Tim 5'); setView('dashboard'); }, 'neutral'); };
     const handleAddAsset = async () => { if (!newAssetForm.title) return; await addDoc(collection(db, 'assets'), { ...newAssetForm, date: new Date().toLocaleDateString() }); setIsAddAssetOpen(false); showToast("Aset Ditambah"); };
     const handleDeleteAsset = (id) => { requestConfirm("Hapus Aset?", "Permanen.", async () => { await deleteDoc(doc(db, 'assets', id)); showToast("Aset Dihapus"); }); };
     const handleSaveNews = async () => { if (newsForm.id) { await updateDoc(doc(db, 'news', newsForm.id), newsForm); } setIsEditNewsOpen(false); showToast("Berita Update"); };
@@ -1139,68 +927,43 @@ export default function App() {
                                     <h1 className="text-2xl font-black text-center text-slate-900 tracking-tight">RoboEdu<span className="text-indigo-600">.Studio</span></h1>
                                 </div>
 
-                                {(!isRegistering && !authEmail && localStorage.getItem('robo_session')) ? (() => {
-                                    try {
-                                        const c = JSON.parse(localStorage.getItem('robo_session'));
-                                        return (
-                                            <div className="animate-[fadeIn_0.3s]">
-                                                <div className="bg-slate-50 p-6 rounded-2xl mb-6 text-center border border-indigo-100 relative overflow-hidden">
-                                                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 to-purple-500"></div>
-                                                    <img src={c.photo || `https://ui-avatars.com/api/?name=${c.email}`} className="w-20 h-20 rounded-full mx-auto mb-3 shadow-md border-4 border-white bg-white object-cover" />
-                                                    <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">Selamat Datang Kembali,</p>
-                                                    <h3 className="font-black text-slate-800 text-xl truncate px-2">{c.name}</h3>
-                                                </div>
-                                                <button onClick={async () => {
-                                                    setLoadingLogin(true);
-                                                    try {
-                                                        const pass = atob(c.pass || '');
-                                                        await signInWithEmailAndPassword(auth, c.email, pass);
-                                                        // Success handled by onAuthStateChanged
-                                                    } catch (err) {
-                                                        setLoadingLogin(false);
-                                                        showToast("Sesi kadaluarsa. Silakan login manual.", "error");
-                                                        localStorage.removeItem('robo_session');
-                                                        setAuthEmail(c.email); // Pre-fill but force manual
-                                                    }
-                                                }} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg hover:scale-[1.02] transition-transform flex items-center justify-center gap-2 mb-4">
-                                                    {loadingLogin ? <Loader2 className="animate-spin" /> : <User size={20} />} Masuk ke Akun Ini
-                                                </button>
-                                                <button onClick={() => { localStorage.removeItem('robo_session'); setIsRegistering(true); setTimeout(() => setIsRegistering(false), 10); }} className="w-full py-3 text-slate-400 hover:text-indigo-600 text-sm font-bold flex items-center justify-center gap-2 transition-colors">
-                                                    Gunakan Akun Lain
-                                                </button>
-                                            </div>
-                                        );
-                                    } catch (e) { return null; }
-                                })() : (
-                                    <form onSubmit={handleEmailAuth} className="space-y-4 animate-[fadeIn_0.3s]">
-                                        <div>
-                                            <label className="block text-left text-xs font-bold text-slate-400 mb-1 ml-1">Email</label>
-                                            <div className="relative">
-                                                <input
-                                                    type="email" required className="w-full p-4 pl-12 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-200"
-                                                    placeholder="user@sekolah.id" value={authEmail} onChange={e => setAuthEmail(e.target.value)}
-                                                />
-                                                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                                            </div>
+                                {/* EMAIL PASSWORD FORM */}
+                                <form onSubmit={handleEmailAuth} className="space-y-4">
+                                    <div>
+                                        <label className="block text-left text-xs font-bold text-slate-400 mb-1 ml-1">Email</label>
+                                        <div className="relative">
+                                            <input
+                                                type="email"
+                                                required
+                                                className="w-full p-4 pl-12 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-200"
+                                                placeholder="user@sekolah.id"
+                                                value={authEmail}
+                                                onChange={e => setAuthEmail(e.target.value)}
+                                            />
+                                            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                                         </div>
+                                    </div>
 
-                                        <div>
-                                            <label className="block text-left text-xs font-bold text-slate-400 mb-1 ml-1">Password</label>
-                                            <div className="relative">
-                                                <input
-                                                    type="password" required className="w-full p-4 pl-12 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-200"
-                                                    placeholder="••••••••" value={authPassword} onChange={e => setAuthPassword(e.target.value)}
-                                                />
-                                                <Key className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                                            </div>
+                                    <div>
+                                        <label className="block text-left text-xs font-bold text-slate-400 mb-1 ml-1">Password</label>
+                                        <div className="relative">
+                                            <input
+                                                type="password"
+                                                required
+                                                className="w-full p-4 pl-12 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-200"
+                                                placeholder="••••••••"
+                                                value={authPassword}
+                                                onChange={e => setAuthPassword(e.target.value)}
+                                            />
+                                            <Key className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                                         </div>
+                                    </div>
 
-                                        <button type="submit" disabled={loadingLogin} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg hover:bg-indigo-700 flex items-center justify-center gap-3">
-                                            {loadingLogin ? <Loader2 className="animate-spin" /> : (isRegistering ? <UserPlus size={20} /> : <Shield size={20} />)}
-                                            {isRegistering ? "Daftar Akun Baru" : "Masuk"}
-                                        </button>
-                                    </form>
-                                )}
+                                    <button type="submit" disabled={loadingLogin} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg hover:bg-indigo-700 flex items-center justify-center gap-3">
+                                        {loadingLogin ? <Loader2 className="animate-spin" /> : (isRegistering ? <UserPlus size={20} /> : <Shield size={20} />)}
+                                        {isRegistering ? "Daftar Akun Baru" : "Masuk"}
+                                    </button>
+                                </form>
 
                                 <div className="mt-6 pt-6 border-t border-slate-100 text-center">
                                     <p className="text-xs text-slate-500 font-medium mb-2">
@@ -1244,10 +1007,9 @@ export default function App() {
                                     <h3 className="font-bold text-lg mb-4 flex items-center gap-2 text-slate-700"><Users size={20} /> User Terdaftar ({usersList.length})</h3>
                                     <div className="space-y-3 max-h-96 overflow-y-auto custom-scrollbar">
                                         {usersList.slice(0, 10).map((u, idx) => (
-                                            <div key={idx} className="flex items-center gap-3 p-3 hover:bg-slate-50 rounded-xl transition-colors group">
+                                            <div key={idx} className="flex items-center gap-3 p-3 hover:bg-slate-50 rounded-xl transition-colors">
                                                 <img src={u.photoURL} className="w-8 h-8 rounded-full bg-slate-200" />
                                                 <div className="flex-1"><div className="font-bold text-sm text-slate-800">{u.displayName}</div><div className="text-[10px] uppercase font-bold text-indigo-500">{u.role}</div></div>
-                                                <button onClick={() => requestConfirm("Hapus User?", `Hapus akses ${u.displayName}?`, async () => { await deleteDoc(doc(db, 'users', u.uid)); showToast("User dihapus"); }, 'danger')} className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"><Trash2 size={16} /></button>
                                             </div>
                                         ))}
                                     </div>
@@ -1277,7 +1039,7 @@ export default function App() {
                             </div>
                             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
                                 {TEAMS.map(team => {
-                                    const count = projects.filter(p => String(p.teamId) === String(team.id) && p.status !== 'Completed').length;
+                                    const count = projects.filter(p => p.teamId === team.id && p.status !== 'Completed').length;
                                     return (
                                         <div key={team.id} onClick={() => { setActiveTeamId(team.id); setView('dashboard'); }} className={`bg-white p-6 rounded-[2rem] border cursor-pointer hover:scale-105 transition-all shadow-sm group ${team.isSpecial ? 'border-amber-200 bg-amber-50/50' : 'border-slate-100 hover:border-indigo-200'}`}>
                                             <div className="flex items-center gap-4 mb-4">
@@ -1326,6 +1088,38 @@ export default function App() {
                                 </div>
                             </div>
 
+                            <div className="mb-8 animate-[fadeIn_0.5s]">
+                                <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2">
+                                    <Users size={18} className="text-indigo-600" />
+                                    Anggota Tim
+                                </h3>
+                                <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar">
+                                    {usersList
+                                        .filter(u => {
+                                            if (userData?.role === 'supervisor' || userData?.role === 'super_admin') {
+                                                return activeTeamId ? u.teamId === activeTeamId : false;
+                                            } else {
+                                                return u.teamId === userData?.teamId;
+                                            }
+                                        })
+                                        .map(u => (
+                                            <div key={u.id} className="min-w-[140px] p-4 bg-white rounded-2xl border border-slate-100 shadow-sm flex flex-col items-center text-center hover:scale-105 transition-transform">
+                                                <img src={u.photoURL || `https://ui-avatars.com/api/?name=${u.displayName}`} className="w-12 h-12 rounded-full mb-2 bg-slate-100 object-cover border-2 border-white shadow-sm" />
+                                                <h4 className="font-bold text-slate-800 text-xs truncate w-full" title={u.displayName}>{u.displayName}</h4>
+                                                <span className="text-[10px] text-slate-500 font-medium uppercase">{u.role?.replace('_', ' ')}</span>
+                                            </div>
+                                        ))
+                                    }
+                                    {usersList.filter(u => {
+                                        if (userData?.role === 'supervisor' || userData?.role === 'super_admin') {
+                                            return activeTeamId ? u.teamId === activeTeamId : false;
+                                        } else {
+                                            return u.teamId === userData?.teamId;
+                                        }
+                                    }).length === 0 && <div className="text-slate-400 text-xs italic pl-2">Belum ada anggota tim lain.</div>}
+                                </div>
+                            </div>
+
                             <PerformanceChart
                                 data={getWeeklyAnalytics((userData?.role === 'supervisor' || userData?.role === 'super_admin') ? activeTeamId || 'all' : userData?.teamId)}
                                 title="Statistik Mingguan"
@@ -1334,13 +1128,16 @@ export default function App() {
                             <div className="grid md:grid-cols-2 gap-4 mt-6">
                                 {projects
                                     .filter(p => {
+                                        // Filter 1: Exclude completed
                                         if (p.status === 'Completed') return false;
 
+                                        // Filter 2: Team-based access
                                         if (userData?.role === 'supervisor' || userData?.role === 'super_admin') {
-                                            return activeTeamId ? (String(p.teamId) === String(activeTeamId)) : true;
+                                            // Admin/Supervisor: If activeTeamId selected, show only that team
+                                            return activeTeamId ? (p.teamId === activeTeamId) : true;
                                         } else {
-                                            // Robust string check
-                                            return String(p.teamId) === String(userData?.teamId);
+                                            // Creator: Show only own team
+                                            return p.teamId === userData?.teamId;
                                         }
                                     })
                                     .map(p => (
@@ -1351,23 +1148,6 @@ export default function App() {
                                         </div>
                                     ))}
                             </div>
-
-
-                            {/* Empty State with Debug Info */}
-                            {projects.filter(p => p.status !== 'Completed' && (userData?.role === 'supervisor' || userData?.role === 'super_admin' ? (activeTeamId ? String(p.teamId).toLowerCase().trim() === String(activeTeamId).toLowerCase().trim() : true) : String(p.teamId).toLowerCase().trim() === String(userData?.teamId).toLowerCase().trim())).length === 0 && (
-                                <div className="text-center py-12 text-slate-400">
-                                    <FolderOpen size={48} className="mx-auto mb-4 opacity-50" />
-                                    <p className="font-bold">Belum ada project aktif di Tim ini.</p>
-                                    <p className="text-xs mt-2 max-w-xs mx-auto">Sistem hanya menampilkan Project yang memiliki <b>teamId</b> sama persis dengan akun Anda.</p>
-                                    <div className="text-[10px] mt-4 font-mono opacity-50 bg-slate-100 inline-block px-4 py-2 rounded text-left">
-                                        <p>Debug Info:</p>
-                                        <p>My Account Team: "{userData?.teamId}"</p>
-                                        <p>Total Projects in DB: {projects.length}</p>
-                                        <p>Sample Project Team: "{projects[0]?.teamId || 'N/A'}"</p>
-                                        <p>Matching Status: {projects.some(p => String(p.teamId).trim() === String(userData?.teamId).trim()) ? "MATCH FOUND (Hidden?)" : "NO MATCH"}</p>
-                                    </div>
-                                </div>
-                            )}
                         </div>
                     )}
 
@@ -1568,7 +1348,51 @@ export default function App() {
                         </div>
                     )}
 
+                    {/* Archive View */}
+                    {view === 'archive' && (
+                        <div className="pt-20 animate-[fadeIn_0.3s]">
+                            <div className="flex justify-between items-end mb-8">
+                                <div>
+                                    <button onClick={() => setView('landing')} className="mb-2 text-xs font-bold text-slate-400 hover:text-indigo-600 flex items-center gap-1"><ChevronLeft size={14} /> Kembali ke Beranda</button>
+                                    <h2 className="text-3xl font-black text-slate-800">Arsip Project</h2>
+                                </div>
+                            </div>
 
+                            <div className="mb-10">
+                                <PerformanceChart data={getWeeklyAnalytics((userData?.role === 'supervisor' || userData?.role === 'super_admin') ? 'all' : userData?.teamId)} title="Statistik Arsip Mingguan" />
+                            </div>
+
+                            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {projects.filter(p => {
+                                    if (p.status !== 'Completed') return false;
+                                    if (userData?.role !== 'supervisor' && userData?.role !== 'super_admin' && p.teamId !== userData?.teamId) return false;
+                                    return true;
+                                }).map(p => (
+                                    <div key={p.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex flex-col gap-4 hover:shadow-md transition-all">
+                                        <div>
+                                            <div className="text-[10px] text-slate-400 mb-1 font-bold">{p.createdAt}</div>
+                                            <h4 className="font-bold text-slate-700 text-lg leading-tight">{p.title}</h4>
+                                        </div>
+                                        {p.isBigProject && <BotEvaluation project={p} />}
+
+                                        <div className="flex gap-2 mt-auto">
+                                            {/* LINK & DELETE ONLY FOR ADMIN OR IF LINK IS PUBLIC (Here restricted) */}
+                                            {p.finalLink && (userData?.role === 'supervisor' || userData?.role === 'super_admin') ? (
+                                                <a href={p.finalLink} target="_blank" className="flex-1 py-2 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center hover:bg-indigo-100 transition-colors font-bold text-xs"><LinkIcon size={14} className="mr-2" /> Drive</a>
+                                            ) : (
+                                                <div className="flex-1 py-2 bg-slate-50 text-slate-400 rounded-xl flex items-center justify-center font-bold text-xs cursor-not-allowed"><Lock size={12} className="mr-2" /> Protected</div>
+                                            )}
+
+                                            {(userData?.role === 'supervisor' || userData?.role === 'super_admin') && (
+                                                <button onClick={(e) => { e.stopPropagation(); handleDeleteProject(p.id); }} className="p-2 bg-red-50 text-red-500 rounded-xl hover:bg-red-100 transition-colors"><Trash2 size={18} /></button>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                                {projects.filter(p => p.status === 'Completed').length === 0 && <div className="col-span-full text-center py-10 text-slate-400 font-medium">Belum ada project yang diarsipkan.</div>}
+                            </div>
+                        </div>
+                    )}
 
                     {/* Assets View Logic */}
                     {view === 'assets' && (
@@ -1584,8 +1408,7 @@ export default function App() {
                             </div>
                             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                                 {assets.map(a => (
-                                    <div key={a.id} onClick={() => a.link && window.open(a.link, '_blank')} className={`bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex items-center gap-4 hover:shadow-lg transition-all group relative ${a.link ? 'cursor-pointer hover:border-indigo-300' : ''}`}>
-                                        {a.link && <div className="absolute top-2 right-2 text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity"><LinkIcon size={12} /></div>}
+                                    <div key={a.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex items-center gap-4 hover:shadow-lg transition-all group relative">
                                         <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 text-white shadow-md ${a.type === 'folder' ? 'bg-blue-500' : a.type === 'audio' ? 'bg-pink-500' : 'bg-purple-500'}`}>{a.type === 'folder' ? <FolderOpen size={24} /> : a.type === 'audio' ? <Mic size={24} /> : <FileVideo size={24} />}</div>
                                         <div className="flex-1 min-w-0"><h4 className="font-bold text-slate-800 text-sm truncate">{a.title}</h4><p className="text-xs text-slate-400 font-bold">{a.size}</p></div>
                                         {(userData?.role === 'supervisor' || userData?.role === 'super_admin') && (
@@ -1609,7 +1432,7 @@ export default function App() {
                             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                                 {projects.filter(p => p.finalLink).map(p => (
                                     <div key={p.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-lg transition-all">
-                                        <div className="flex justify-between mb-4"><span className="text-[10px] bg-slate-100 px-2 py-1 rounded-md font-bold uppercase text-slate-600">{TEAMS.find(t => t.id === p.teamId)?.name}</span><span className="text-[10px] text-slate-400 font-bold">{formatFirestoreDate(p.createdAt)}</span></div>
+                                        <div className="flex justify-between mb-4"><span className="text-[10px] bg-slate-100 px-2 py-1 rounded-md font-bold uppercase text-slate-600">{TEAMS.find(t => t.id === p.teamId)?.name}</span><span className="text-[10px] text-slate-400 font-bold">{p.createdAt?.toDate ? p.createdAt.toDate().toLocaleDateString() : p.createdAt}</span></div>
                                         <h3 className="font-bold text-slate-800 text-lg mb-6 leading-tight">{p.title}</h3>
                                         <a href={p.finalLink} target="_blank" className="flex items-center justify-center gap-2 w-full py-3 bg-emerald-50 text-emerald-600 rounded-xl text-sm font-bold border border-emerald-100 hover:bg-emerald-100 transition-colors"><LinkIcon size={16} /> Buka Link Drive</a>
                                     </div>
@@ -1623,33 +1446,22 @@ export default function App() {
                         <div className="pt-20 animate-[fadeIn_0.3s]">
                             <div className="flex justify-between items-end mb-8">
                                 <div>
-                                    <button onClick={() => {
-                                        if ((userData?.role === 'supervisor' || userData?.role === 'super_admin') && !activeTeamId) {
-                                            setView('team-list');
-                                        } else {
-                                            setView('dashboard');
-                                        }
-                                    }} className="mb-2 text-xs font-bold text-slate-400 hover:text-indigo-600 flex items-center gap-1"><ChevronLeft size={14} /> Kembali</button>
-                                    <h2 className="text-3xl font-black text-slate-800">Arsip Project (Fixed)</h2>
+                                    <button onClick={() => setView('dashboard')} className="mb-2 text-xs font-bold text-slate-400 hover:text-indigo-600 flex items-center gap-1"><ChevronLeft size={14} /> Kembali</button>
+                                    <h2 className="text-3xl font-black text-slate-800">Arsip Project</h2>
                                     <p className="text-sm text-slate-500 mt-1">Project yang sudah selesai</p>
                                 </div>
                             </div>
-
-                            <div className="mb-10">
-                                <PerformanceChart data={getWeeklyAnalytics((userData?.role === 'supervisor' || userData?.role === 'super_admin') ? activeTeamId || 'all' : userData?.teamId)} title="Statistik Arsip Mingguan" />
-                            </div>
-
                             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
                                 {projects
                                     .filter(p => {
                                         // Show completed projects only
-                                        if (p.status !== 'Completed') return false;
+                                        if (p.status !== ' Completed') return false;
 
                                         // Team-based filter
                                         if (userData?.role === 'supervisor' || userData?.role === 'super_admin') {
-                                            return activeTeamId ? (String(p.teamId) === String(activeTeamId)) : true;
+                                            return activeTeamId ? (p.teamId === activeTeamId) : true;
                                         } else {
-                                            return String(p.teamId) === String(userData?.teamId);
+                                            return p.teamId === userData?.teamId;
                                         }
                                     })
                                     .map(p => (
@@ -1659,7 +1471,16 @@ export default function App() {
                                                     <CheckCircle2 size={10} /> Completed
                                                 </span>
                                                 <span className="text-[10px] text-slate-400 font-bold">
-                                                    {formatFirestoreDate(p.createdAt)}
+                                                    {(() => {
+                                                        const d = p.createdAt;
+                                                        if (!d) return '-';
+                                                        try {
+                                                            if (typeof d === 'string') return d;
+                                                            if (d?.toDate) return d.toDate().toLocaleDateString();
+                                                            if (d?.seconds) return new Date(d.seconds * 1000).toLocaleDateString();
+                                                            return 'Invalid Date';
+                                                        } catch (e) { return 'Date Error'; }
+                                                    })()}
                                                 </span>
                                             </div>
                                             <div className="flex items-center gap-2 mb-2">
@@ -1676,20 +1497,14 @@ export default function App() {
                                                     <LinkIcon size={16} /> Buka Hasil Final
                                                 </a>
                                             )}
-                                            {(userData?.role === 'supervisor' || userData?.role === 'super_admin') && (
-                                                <button onClick={() => handleDeleteProject(p.id)} className="w-full mt-2 py-3 bg-red-50 text-red-500 rounded-xl text-sm font-bold border border-red-100 hover:bg-red-100 transition-colors flex items-center justify-center gap-2">
-                                                    <Trash2 size={16} /> Hapus Arsip
-                                                </button>
-                                            )}
                                         </div>
                                     ))}
                                 {projects.filter(p => {
                                     if (p.status !== 'Completed') return false;
-                                    if (p.status !== 'Completed') return false;
                                     if (userData?.role === 'supervisor' || userData?.role === 'super_admin') {
-                                        return activeTeamId ? (String(p.teamId) === String(activeTeamId)) : true;
+                                        return activeTeamId ? (p.teamId === activeTeamId) : true;
                                     } else {
-                                        return String(p.teamId) === String(userData?.teamId);
+                                        return p.teamId === userData?.teamId;
                                     }
                                 }).length === 0 && (
                                         <div className="col-span-full text-center py-20">
@@ -1747,7 +1562,6 @@ export default function App() {
             <Modal isOpen={isAddAssetOpen} onClose={() => setIsAddAssetOpen(false)} title="Upload Aset Baru">
                 <div className="space-y-4">
                     <div><label className="block text-xs font-bold text-slate-500 mb-1">Nama File</label><input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:bg-white focus:border-indigo-500 transition-all font-medium" placeholder="Contoh: Logo.png" value={newAssetForm.title} onChange={e => setNewAssetForm({ ...newAssetForm, title: e.target.value })} /></div>
-                    <div><label className="block text-xs font-bold text-slate-500 mb-1">Link URL</label><input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:bg-white focus:border-indigo-500 transition-all font-medium" placeholder="https://..." value={newAssetForm.link || ''} onChange={e => setNewAssetForm({ ...newAssetForm, link: e.target.value })} /></div>
                     <div className="flex gap-3">
                         <div className="flex-1"><label className="block text-xs font-bold text-slate-500 mb-1">Tipe File</label><select className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none flex-1 font-medium cursor-pointer" value={newAssetForm.type} onChange={e => setNewAssetForm({ ...newAssetForm, type: e.target.value })}><option value="folder">Folder</option><option value="audio">Audio</option><option value="video">Video</option></select></div>
                         <div className="w-1/3"><label className="block text-xs font-bold text-slate-500 mb-1">Ukuran (MB)</label><input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none font-medium" placeholder="Size" value={newAssetForm.size} onChange={e => setNewAssetForm({ ...newAssetForm, size: e.target.value })} /></div>
@@ -1780,57 +1594,36 @@ export default function App() {
                             id="photo-upload"
                             accept="image/*"
                             className="hidden"
-                            onChange={(e) => {
+                            onChange={async (e) => {
                                 const file = e.target.files[0];
                                 if (!file) return;
 
-                                // Base64 Storage Strategy (No Firebase Storage needed)
-                                const reader = new FileReader();
-                                reader.onload = (event) => {
-                                    const img = new Image();
-                                    img.onload = () => {
-                                        const canvas = document.createElement('canvas');
-                                        const ctx = canvas.getContext('2d');
+                                if (file.size > 2 * 1024 * 1024) {
+                                    return showToast("Ukuran foto maksimal 2MB!", "error");
+                                }
 
-                                        // Resize to 200x200 for profile optimization
-                                        const maxWidth = 200;
-                                        const scale = maxWidth / img.width;
-                                        canvas.width = maxWidth;
-                                        canvas.height = img.height * scale;
-
-                                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-                                        // Compress to JPEG 0.7 quality
-                                        const base64String = canvas.toDataURL('image/jpeg', 0.7);
-
-                                        setEditProfileData({ ...editProfileData, photoURL: base64String });
-                                        showToast("Foto siap disimpan!");
-                                    };
-                                    img.src = event.target.result;
-                                };
-                                reader.readAsDataURL(file);
+                                try {
+                                    showToast("Mengupload foto...");
+                                    const storageRef = ref(storage, `profile_photos/${user.uid}_${Date.now()}.jpg`);
+                                    await uploadBytes(storageRef, file);
+                                    const photoURL = await getDownloadURL(storageRef);
+                                    setEditProfileData({ ...editProfileData, photoURL });
+                                    showToast("Foto berhasil diupload! ✅");
+                                } catch (err) {
+                                    console.error("Upload error:", err);
+                                    showToast("Gagal upload foto: " + err.message, "error");
+                                }
                             }}
                         />
-                        <div className="flex items-center gap-4 mb-3">
-                            <div className="w-16 h-16 rounded-full bg-slate-100 border border-slate-200 overflow-hidden shrink-0">
-                                {editProfileData.photoURL ? (
-                                    <img src={editProfileData.photoURL} className="w-full h-full object-cover" alt="Preview" />
-                                ) : (
-                                    <div className="w-full h-full flex items-center justify-center text-slate-300"><User size={24} /></div>
-                                )}
-                            </div>
-                            <div className="flex-1">
-                                <button
-                                    type="button"
-                                    onClick={() => document.getElementById('photo-upload').click()}
-                                    className="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-200 transition-colors flex items-center gap-2"
-                                >
-                                    <Camera size={14} /> Pilih Foto Baru
-                                </button>
-                                <p className="text-[10px] text-slate-400 mt-1 ml-1">JPG, PNG max 2MB</p>
-                            </div>
-                        </div>
-
+                        <button
+                            type="button"
+                            onClick={() => document.getElementById('photo-upload').click()}
+                            className="w-full p-4 bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 flex flex-col items-center justify-center gap-2 hover:bg-slate-100 transition-colors cursor-pointer"
+                        >
+                            <Upload size={24} />
+                            <span className="text-sm font-medium">Klik untuk pilih foto dari Galeri</span>
+                            <span className="text-[10px] text-slate-400">Maksimal 2MB (JPG/PNG)</span>
+                        </button>
                         {editProfileData.photoURL !== userData?.photoURL && (
                             <div className="mt-2 flex items-center justify-center gap-2 text-emerald-500">
                                 <img src={editProfileData.photoURL} className="w-10 h-10 rounded-full border-2 border-emerald-200" />
@@ -1840,7 +1633,7 @@ export default function App() {
                     </div>
                     <button onClick={handleUpdateProfile} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold transition-all shadow-lg flex items-center justify-center gap-2"><Save size={18} /> Simpan Profil</button>
                 </div>
-            </Modal >
+            </Modal>
 
             {/* --- MODAL APPROVAL USER --- */}
             {/* Ensure this modal is rendered at root level of return */}
@@ -1859,34 +1652,10 @@ export default function App() {
                                 <button type="button" onClick={() => setApprovalForm({ ...approvalForm, role: 'supervisor' })} className={`p-3 rounded-xl border text-left text-sm font-bold ${approvalForm.role === 'supervisor' ? 'bg-purple-50 border-purple-500 text-purple-700' : 'text-slate-600'}`}>Supervisor</button>
                             </div>
                         </div>
-
-
-                        {/* Team Selection for Creator */}
-                        {
-                            approvalForm.role === 'creator' && (
-                                <div className="space-y-2 animate-[fadeIn_0.3s]">
-                                    <label className="text-xs font-bold text-slate-400 uppercase">Pilih Penempatan Tim</label>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        {TEAMS.filter(t => !t.isSpecial).map(t => (
-                                            <button
-                                                key={t.id}
-                                                type="button"
-                                                onClick={() => setApprovalForm({ ...approvalForm, teamId: t.id })}
-                                                className={`p-3 rounded-xl border text-left text-sm font-bold transition-all ${approvalForm.teamId === t.id ? 'bg-indigo-50 border-indigo-500 text-indigo-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
-                                            >
-                                                {t.name}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                            )
-                        }
-
-                        <button type="button" onClick={handleConfirmApproval} className="w-full py-4 bg-emerald-500 text-white rounded-2xl font-bold shadow-lg hover:bg-emerald-600 transition-all">Setujui Akses</button>
-                    </div >
-                ) : (<div className="text-center py-10"><Loader2 className="animate-spin mx-auto text-slate-300" /></div>)
-                }
-            </Modal >
+                        <button type="button" onClick={handleConfirmApproval} className="w-full py-4 bg-emerald-500 text-white rounded-2xl font-bold shadow-lg">Setujui Akses</button>
+                    </div>
+                ) : (<div className="text-center py-10"><Loader2 className="animate-spin mx-auto text-slate-300" /></div>)}
+            </Modal>
 
             {/* Other modals (Edit Weekly, News, Approval, etc.) remain standard as previous */}
             {/* ... (Keeping previous modal implementations for brevity) ... */}
