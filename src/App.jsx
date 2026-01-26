@@ -1358,9 +1358,7 @@ export default function App() {
                                 </div>
                             </div>
 
-                            <div className="mb-10">
-                                <PerformanceChart data={getWeeklyAnalytics((userData?.role === 'supervisor' || userData?.role === 'super_admin') ? activeTeamId || 'all' : userData?.teamId)} title="Statistik Arsip Mingguan" />
-                            </div>
+                            {/* Chart Removed by User Request to Fix Blank Screen Issue */}
 
                             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                                 {projects.filter(p => {
