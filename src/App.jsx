@@ -578,6 +578,17 @@ export default function App() {
         } catch (e) { showToast("Gagal Approve", "error"); }
     };
     const handleRejectUser = (u) => { requestConfirm("Tolak?", "Hapus user.", async () => { await deleteDoc(doc(db, 'pending_users', u.id)); showToast("Ditolak."); }); };
+    const handleDeleteUser = (u) => {
+        if (u.uid === user.uid) return showToast("Tidak bisa hapus diri sendiri!", "error");
+        requestConfirm("Hapus User?", "Data & akses user akan hilang permanen.", async () => {
+            try {
+                await deleteDoc(doc(db, 'users', u.id));
+                showToast("User berhasil dihapus.");
+            } catch (e) {
+                showToast("Gagal hapus user.", "error");
+            }
+        }, 'danger');
+    };
 
     // PROJECTS
     const handleAddProject = async () => {
@@ -1013,10 +1024,18 @@ export default function App() {
                                 <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
                                     <h3 className="font-bold text-lg mb-4 flex items-center gap-2 text-slate-700"><Users size={20} /> User Terdaftar ({usersList.length})</h3>
                                     <div className="space-y-3 max-h-96 overflow-y-auto custom-scrollbar">
-                                        {usersList.slice(0, 10).map((u, idx) => (
-                                            <div key={idx} className="flex items-center gap-3 p-3 hover:bg-slate-50 rounded-xl transition-colors">
-                                                <img src={u.photoURL} className="w-8 h-8 rounded-full bg-slate-200" />
-                                                <div className="flex-1"><div className="font-bold text-sm text-slate-800">{u.displayName}</div><div className="text-[10px] uppercase font-bold text-indigo-500">{u.role}</div></div>
+                                        {usersList.map((u, idx) => (
+                                            <div key={idx} className="flex items-center gap-3 p-3 hover:bg-slate-50 rounded-xl transition-colors group">
+                                                <img src={u.photoURL} className="w-8 h-8 rounded-full bg-slate-200 object-cover" />
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="font-bold text-sm text-slate-800 truncate">{u.displayName}</div>
+                                                    <div className="text-[10px] uppercase font-bold text-indigo-500">{u.role?.replace('_', ' ')}</div>
+                                                </div>
+                                                {u.uid !== user.uid && (
+                                                    <button onClick={() => handleDeleteUser(u)} className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Hapus User">
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                )}
                                             </div>
                                         ))}
                                     </div>
