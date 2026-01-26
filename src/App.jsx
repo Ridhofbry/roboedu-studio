@@ -708,7 +708,20 @@ export default function App() {
     const handleSubmitFinalTim5 = () => { requestConfirm("Yakin Submit?", "Project selesai.", () => { handleUpdateProjectFirestore(activeProject.id, { status: "Completed", progress: 100, completedAt: new Date().toISOString() }); sendOneSignalNotification('supervisor', `FINAL SUBMIT Tim 5: ${activeProject.title}`, 'Tim 5'); setView('dashboard'); }, 'neutral'); };
     const handleAddAsset = async () => { if (!newAssetForm.title) return; await addDoc(collection(db, 'assets'), { ...newAssetForm, date: new Date().toLocaleDateString() }); setIsAddAssetOpen(false); showToast("Aset Ditambah"); };
     const handleDeleteAsset = (id) => { requestConfirm("Hapus Aset?", "Permanen.", async () => { await deleteDoc(doc(db, 'assets', id)); showToast("Aset Dihapus"); }); };
-    const handleSaveNews = async () => { if (newsForm.id) { await updateDoc(doc(db, 'news', newsForm.id), newsForm); } setIsEditNewsOpen(false); showToast("Berita Update"); };
+    const handleSaveNews = async () => {
+        if (newsForm.id) {
+            await updateDoc(doc(db, 'news', newsForm.id), newsForm);
+            showToast("Berita Update");
+        } else {
+            await addDoc(collection(db, 'news'), {
+                ...newsForm,
+                date: new Date().toLocaleDateString(),
+                category: "Info" // Default category
+            });
+            showToast("Berita Ditambahkan");
+        }
+        setIsEditNewsOpen(false);
+    };
     const handleSaveLogo = async () => { await setDoc(doc(db, 'site_config', 'main'), { logo: logoForm }, { merge: true }); setIsEditLogoOpen(false); showToast("Logo Update"); };
     const handleSaveWeekly = async () => {
         try {
@@ -930,6 +943,14 @@ export default function App() {
                             <div className="max-w-5xl mx-auto mb-12">
                                 <WeeklyBotReport projects={projects} />
                             </div>
+
+                            {(userData?.role === 'supervisor' || userData?.role === 'super_admin') && (
+                                <div className="max-w-5xl mx-auto mb-6 flex justify-end">
+                                    <button onClick={() => { setNewsForm({ id: null, title: '', summary: '', content: '' }); setIsEditNewsOpen(true); }} className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold text-sm shadow-lg hover:bg-indigo-700 transition-all flex items-center gap-2">
+                                        <Plus size={18} /> Tambah Berita
+                                    </button>
+                                </div>
+                            )}
 
                             <div className="grid md:grid-cols-3 gap-6 mb-20">
                                 {news.map(n => (
