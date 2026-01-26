@@ -530,22 +530,22 @@ export default function App() {
 
     const handlePhotoUpload = async (file) => {
         if (!file) return;
-        if (!storage) return showToast("Storage tidak tersedia", "error");
+        if (file.size > 2 * 1024 * 1024) return showToast("Maksimal 2MB!", "error");
 
         try {
-            console.log('🔵 DEBUG: Uploading photo...', file.name);
-            const fileRef = ref(storage, `profile-photos/${user.uid}/${Date.now()}_${file.name}`);
-            await uploadBytes(fileRef, file);
-            const photoURL = await getDownloadURL(fileRef);
-            console.log('🔵 DEBUG: Photo uploaded:', photoURL);
-
-            await updateDoc(doc(db, 'users', user.uid), { photoURL });
-            setUserData({ ...userData, photoURL });
-            setEditProfileData({ ...editProfileData, photoURL });
-            showToast('Foto berhasil diupload!');
+            console.log('🔵 DEBUG: Processing photo to Base64...');
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onloadend = async () => {
+                const base64Photo = reader.result;
+                await updateDoc(doc(db, 'users', user.uid), { photoURL: base64Photo });
+                setUserData({ ...userData, photoURL: base64Photo });
+                setEditProfileData({ ...editProfileData, photoURL: base64Photo });
+                showToast('Foto profil berhasil diupdate!');
+            };
         } catch (e) {
-            console.error('Upload error:', e);
-            showToast('Upload gagal: ' + e.message, 'error');
+            console.error('Photo error:', e);
+            showToast('Gagal update foto: ' + e.message, 'error');
         }
     };
 
@@ -1503,6 +1503,7 @@ export default function App() {
                         <div className="flex-1"><label className="block text-xs font-bold text-slate-500 mb-1">Tipe File</label><select className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none flex-1 font-medium cursor-pointer" value={newAssetForm.type} onChange={e => setNewAssetForm({ ...newAssetForm, type: e.target.value })}><option value="folder">Folder</option><option value="audio">Audio</option><option value="video">Video</option></select></div>
                         <div className="w-1/3"><label className="block text-xs font-bold text-slate-500 mb-1">Ukuran (MB)</label><input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none font-medium" placeholder="Size" value={newAssetForm.size} onChange={e => setNewAssetForm({ ...newAssetForm, size: e.target.value })} /></div>
                     </div>
+                    <div><label className="block text-xs font-bold text-slate-500 mb-1">Link Download (GDrive)</label><input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:bg-white focus:border-indigo-500 transition-all font-medium" placeholder="https://..." value={newAssetForm.link || ''} onChange={e => setNewAssetForm({ ...newAssetForm, link: e.target.value })} /></div>
                     <button onClick={handleAddAsset} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg mt-2 hover:bg-indigo-700 transition-all">Simpan Aset</button>
                 </div>
             </Modal>
@@ -1531,26 +1532,7 @@ export default function App() {
                             id="photo-upload"
                             accept="image/*"
                             className="hidden"
-                            onChange={async (e) => {
-                                const file = e.target.files[0];
-                                if (!file) return;
-
-                                if (file.size > 2 * 1024 * 1024) {
-                                    return showToast("Ukuran foto maksimal 2MB!", "error");
-                                }
-
-                                try {
-                                    showToast("Mengupload foto...");
-                                    const storageRef = ref(storage, `profile_photos/${user.uid}_${Date.now()}.jpg`);
-                                    await uploadBytes(storageRef, file);
-                                    const photoURL = await getDownloadURL(storageRef);
-                                    setEditProfileData({ ...editProfileData, photoURL });
-                                    showToast("Foto berhasil diupload! ✅");
-                                } catch (err) {
-                                    console.error("Upload error:", err);
-                                    showToast("Gagal upload foto: " + err.message, "error");
-                                }
-                            }}
+                            onChange={e => handlePhotoUpload(e.target.files[0])}
                         />
                         <button
                             type="button"
