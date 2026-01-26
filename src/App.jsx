@@ -409,6 +409,9 @@ export default function App() {
 
                                 // Only create if doesn't exist to preserve date
                                 if (!pendingSnap.exists()) {
+                                    // SECURITY: Force refresh token to ensure 'email_verified' is true in Firestore Rules
+                                    await u.getIdToken(true);
+
                                     await setDoc(pendingRef, {
                                         email: u.email,
                                         displayName: "Calon Member",
@@ -1075,6 +1078,7 @@ export default function App() {
                                         onClick={async () => {
                                             await user.reload();
                                             if (user.emailVerified) {
+                                                await user.getIdToken(true); // Force Refresh Token
                                                 window.location.reload(); // Reload total untuk trigger Auth State
                                             } else {
                                                 showToast("Belum terverifikasi. Coba klik link di email Anda.", "error");
