@@ -668,7 +668,11 @@ export default function App() {
             showToast("Gagal buat project: " + error.message, "error");
         }
     };
-    const handleUpdateProjectFirestore = async (id, data) => { try { await updateDoc(doc(db, 'projects', id), data); } catch (e) { showToast("Gagal update project", "error"); } };
+    const handleUpdateProjectFirestore = async (id, data) => {
+        // Optimistic Update for instant typing
+        setProjects(prev => prev.map(p => p.id === id ? { ...p, ...data } : p));
+        try { await updateDoc(doc(db, 'projects', id), data); } catch (e) { showToast("Gagal update project", "error"); }
+    };
     const handleDeleteProject = (id) => { requestConfirm("Hapus Project?", "Permanen.", async () => { await deleteDoc(doc(db, 'projects', id)); if (activeProject?.id === id) { setActiveProject(null); setView('dashboard'); } showToast("Project Dihapus"); }); };
     const toggleTask = (projId, taskId) => {
         const proj = projects.find(p => p.id === projId);
@@ -1247,13 +1251,13 @@ export default function App() {
                                                     <div>
                                                         <label className="text-xs font-black text-amber-700 uppercase block mb-2 tracking-wider">Script & Naskah</label>
                                                         <div className="relative">
-                                                            <textarea disabled={userData?.role !== 'tim_khusus'} className="w-full bg-white p-4 rounded-2xl text-sm font-medium text-slate-700 border border-amber-200 h-60 outline-none focus:ring-4 focus:ring-amber-200/50 transition-all custom-scrollbar resize-none shadow-sm" value={activeProject.script} onChange={e => handleUpdateProjectFirestore(activeProject.id, { script: e.target.value })} placeholder="Isi naskah detail disini..." />
+                                                            <textarea disabled={userData?.role !== 'tim_khusus'} className="w-full bg-white p-4 rounded-2xl text-sm font-medium text-slate-700 border border-amber-200 h-60 outline-none focus:ring-4 focus:ring-amber-200/50 transition-all custom-scrollbar resize-none shadow-sm" value={activeProject.script || ''} onChange={e => handleUpdateProjectFirestore(activeProject.id, { script: e.target.value })} placeholder="Isi naskah detail disini..." />
                                                             {userData?.role === 'tim_khusus' && <button onClick={() => setShowAIModal(true)} className="absolute bottom-4 right-4 p-2 bg-amber-500 text-white rounded-lg shadow hover:bg-amber-600 transition-transform hover:scale-110"><Wand2 size={16} /></button>}
                                                         </div>
                                                     </div>
                                                     <div>
                                                         <label className="text-xs font-black text-amber-700 uppercase block mb-2 tracking-wider">List Alat & Equipment</label>
-                                                        <textarea disabled={userData?.role !== 'tim_khusus'} className="w-full bg-white p-4 rounded-2xl text-sm font-medium text-slate-700 border border-amber-200 h-60 outline-none focus:ring-4 focus:ring-amber-200/50 transition-all custom-scrollbar resize-none shadow-sm" value={activeProject.equipment} onChange={e => handleUpdateProjectFirestore(activeProject.id, { equipment: e.target.value })} placeholder="List kamera, lighting, audio..." />
+                                                        <textarea disabled={userData?.role !== 'tim_khusus'} className="w-full bg-white p-4 rounded-2xl text-sm font-medium text-slate-700 border border-amber-200 h-60 outline-none focus:ring-4 focus:ring-amber-200/50 transition-all custom-scrollbar resize-none shadow-sm" value={activeProject.equipment || ''} onChange={e => handleUpdateProjectFirestore(activeProject.id, { equipment: e.target.value })} placeholder="List kamera, lighting, audio..." />
                                                     </div>
                                                 </div>
                                                 <div className="mb-8">
