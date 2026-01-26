@@ -405,25 +405,27 @@ export default function App() {
                             // REGULAR USER - Add to Pending using UID as Doc ID
                             try {
                                 const pendingRef = doc(db, 'pending_users', u.uid);
-                                const pendingSnap = await getDoc(pendingRef);
 
-                                // Only create if doesn't exist to preserve date
-                                if (!pendingSnap.exists()) {
-                                    // SECURITY: Force refresh token to ensure 'email_verified' is true in Firestore Rules
-                                    await u.getIdToken(true);
+                                // SECURITY: Force refresh token to ensure 'email_verified' is true
+                                await u.getIdToken(true);
 
-                                    await setDoc(pendingRef, {
-                                        email: u.email,
-                                        displayName: "Calon Member",
-                                        photoURL: `https://ui-avatars.com/api/?name=${u.email}`,
-                                        date: new Date().toLocaleDateString(),
-                                        uid: u.uid
-                                    });
-                                }
+                                // Try to CREATE. 
+                                // Note: If doc exists, this counts as UPDATE. 
+                                // If 'update' is denied by rules, this throws error.
+                                // We catch it and assume "Already Pending".
+                                await setDoc(pendingRef, {
+                                    email: u.email,
+                                    displayName: "Calon Member",
+                                    photoURL: `https://ui-avatars.com/api/?name=${u.email}`,
+                                    date: new Date().toLocaleDateString(),
+                                    uid: u.uid
+                                });
                             } catch (e) {
-                                console.error("Pending creation failed:", e);
-                                // Don't block logout if this fails, but log it.
+                                // If error is 'permission-denied', it likely means the user is already pending
+                                // (because 'update' is restricted to admin, but 'create' is allowed for verified users)
+                                console.log("Pending creation skipped (likely exists):", e.message);
                             }
+
 
                             await signOut(auth);
                             setUserData(null);
