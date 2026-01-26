@@ -322,8 +322,15 @@ export default function App() {
 
         projects.forEach(p => {
             if (p.status === 'Completed' && p.completedAt) {
-                const d = new Date(p.completedAt);
-                if (d >= start && (teamId === 'all' || p.teamId === teamId)) {
+                let d;
+                try {
+                    // Robust Date Parsing
+                    if (p.completedAt?.toDate) d = p.completedAt.toDate();
+                    else if (p.completedAt?.seconds) d = new Date(p.completedAt.seconds * 1000);
+                    else d = new Date(p.completedAt);
+                } catch (e) { return; }
+
+                if (d && !isNaN(d.getTime()) && d >= start && (teamId === 'all' || p.teamId === teamId)) {
                     const idx = d.getDay() === 0 ? 6 : d.getDay() - 1;
                     data[idx]++;
                 }
@@ -1358,7 +1365,9 @@ export default function App() {
                                 </div>
                             </div>
 
-                            {/* Chart Removed by User Request to Fix Blank Screen Issue */}
+                            <div className="mb-10 animate-[fadeIn_0.5s]">
+                                <PerformanceChart data={getWeeklyAnalytics((userData?.role === 'supervisor' || userData?.role === 'super_admin') ? activeTeamId || 'all' : userData?.teamId)} title="Statistik Arsip Mingguan" />
+                            </div>
 
                             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                                 {projects.filter(p => {
