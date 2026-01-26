@@ -1040,7 +1040,7 @@ export default function App() {
                     {/* User Management */}
                     {view === 'user-management' && userData?.role === 'super_admin' && (
                         <div className="pt-20 animate-[fadeIn_0.3s]">
-                            <div className="flex items-center gap-2 mb-6"><button onClick={() => setView('dashboard')} className="p-2 bg-white rounded-full hover:bg-slate-100"><ChevronLeft /></button><h2 className="text-3xl font-black text-slate-800">Manajemen Akses</h2></div>
+                            <div className="flex items-center gap-2 mb-6"><button onClick={() => setView('team-list')} className="p-2 bg-white rounded-full hover:bg-slate-100"><ChevronLeft /></button><h2 className="text-3xl font-black text-slate-800">Manajemen Akses</h2></div>
                             <div className="grid md:grid-cols-2 gap-8">
                                 <div className="bg-white p-6 rounded-[2rem] border border-orange-100 shadow-lg relative overflow-hidden">
                                     <div className="absolute top-0 left-0 w-full h-1 bg-orange-400"></div>
@@ -1632,6 +1632,23 @@ export default function App() {
                                 <button type="button" onClick={() => setApprovalForm({ ...approvalForm, role: 'tim_khusus' })} className={`p-3 rounded-xl border text-left text-sm font-bold ${approvalForm.role === 'tim_khusus' ? 'bg-amber-50 border-amber-500 text-amber-700' : 'text-slate-600'}`}>Tim Khusus</button>
                                 <button type="button" onClick={() => setApprovalForm({ ...approvalForm, role: 'supervisor' })} className={`p-3 rounded-xl border text-left text-sm font-bold ${approvalForm.role === 'supervisor' ? 'bg-purple-50 border-purple-500 text-purple-700' : 'text-slate-600'}`}>Supervisor</button>
                             </div>
+                            {approvalForm.role === 'creator' && (
+                                <div className="mt-4 animate-[fadeIn_0.3s]">
+                                    <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">Pilih Tim</label>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {TEAMS.filter(t => !t.isSpecial).map(team => (
+                                            <button
+                                                key={team.id}
+                                                type="button"
+                                                onClick={() => setApprovalForm({ ...approvalForm, teamId: team.id })}
+                                                className={`p-3 rounded-xl border text-left text-xs font-bold ${approvalForm.teamId === team.id ? 'bg-indigo-50 border-indigo-500 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'}`}
+                                            >
+                                                {team.name}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                         <button type="button" onClick={handleConfirmApproval} className="w-full py-4 bg-emerald-500 text-white rounded-2xl font-bold shadow-lg">Setujui Akses</button>
                     </div>
