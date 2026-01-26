@@ -484,7 +484,36 @@ export default function App() {
         setShowPendingAlert(false);
         try {
             if (isRegistering) {
-                await createUserWithEmailAndPassword(auth, authEmail, authPassword);
+                // EXPLICIT REGISTRATION FLOW
+                const res = await createUserWithEmailAndPassword(auth, authEmail, authPassword);
+                const u = res.user;
+
+                // Cek apakah Super Admin (Safety)
+                if (!SUPER_ADMIN_EMAILS.includes(u.email)) {
+                    // Check if already in pending (paranoia check)
+                    const q = query(collection(db, 'pending_users'), where('email', '==', u.email));
+                    const snap = await getDocs(q);
+                    if (snap.empty) {
+                        await addDoc(collection(db, 'pending_users'), {
+                            email: u.email,
+                            displayName: "Calon Member",
+                            photoURL: `https://ui-avatars.com/api/?name=${u.email}`,
+                            date: new Date().toLocaleDateString(),
+                            uid: u.uid
+                        });
+                    }
+
+                    // Force Logout & Redirect
+                    await signOut(auth);
+                    setUserData(null);
+                    setView('landing');
+                    setShowPendingAlert(true);
+                    setIsRegistering(false);
+                    setAuthEmail('');
+                    setAuthPassword('');
+                    showToast("Pendaftaran berhasil! Tunggu persetujuan admin.");
+                }
+                // If Super Admin, let onAuthStateChanged handle the auto-creation
             } else {
                 await signInWithEmailAndPassword(auth, authEmail, authPassword);
             }
@@ -493,6 +522,7 @@ export default function App() {
             if (err.code === 'auth/invalid-credential') errorMsg = "Email atau password salah.";
             if (err.code === 'auth/email-already-in-use') errorMsg = "Email ini sudah terdaftar.";
             showToast(errorMsg, "error");
+        } finally {
             setLoadingLogin(false);
         }
     };
