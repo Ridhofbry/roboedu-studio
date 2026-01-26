@@ -671,6 +671,10 @@ export default function App() {
     const handleUpdateProjectFirestore = async (id, data) => {
         // Optimistic Update for instant typing
         setProjects(prev => prev.map(p => p.id === id ? { ...p, ...data } : p));
+        // FIX: Also update activeProject if it matches, otherwise inputs lag/reset
+        if (activeProject && activeProject.id === id) {
+            setActiveProject(prev => ({ ...prev, ...data }));
+        }
         try { await updateDoc(doc(db, 'projects', id), data); } catch (e) { showToast("Gagal update project", "error"); }
     };
     const handleDeleteProject = (id) => { requestConfirm("Hapus Project?", "Permanen.", async () => { await deleteDoc(doc(db, 'projects', id)); if (activeProject?.id === id) { setActiveProject(null); setView('dashboard'); } showToast("Project Dihapus"); }); };
