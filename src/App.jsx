@@ -722,6 +722,14 @@ export default function App() {
         }
         setIsEditNewsOpen(false);
     };
+    const handleDeleteNews = () => {
+        if (!newsForm.id) return;
+        requestConfirm("Hapus Berita?", "Data tidak bisa dikembalikan.", async () => {
+            await deleteDoc(doc(db, 'news', newsForm.id));
+            setIsEditNewsOpen(false);
+            showToast("Berita Dihapus");
+        }, 'danger');
+    };
     const handleSaveLogo = async () => { await setDoc(doc(db, 'site_config', 'main'), { logo: logoForm }, { merge: true }); setIsEditLogoOpen(false); showToast("Logo Update"); };
     const handleSaveWeekly = async () => {
         try {
@@ -1763,7 +1771,12 @@ export default function App() {
                     <div><label className="block text-xs font-bold text-slate-500 mb-1">Judul Berita</label><input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:border-indigo-500" value={newsForm.title} onChange={e => setNewsForm({ ...newsForm, title: e.target.value })} /></div>
                     <div><label className="block text-xs font-bold text-slate-500 mb-1">Ringkasan (Depan)</label><input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:border-indigo-500" value={newsForm.summary} onChange={e => setNewsForm({ ...newsForm, summary: e.target.value })} /></div>
                     <div><label className="block text-xs font-bold text-slate-500 mb-1">Konten Lengkap</label><textarea className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:border-indigo-500 h-40 resize-none" value={newsForm.content} onChange={e => setNewsForm({ ...newsForm, content: e.target.value })} /></div>
-                    <button onClick={handleSaveNews} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold transition-all shadow-lg flex items-center justify-center gap-2"><Save size={18} /> Simpan Berita</button>
+                    <div className="flex gap-2">
+                        {newsForm.id && (
+                            <button onClick={handleDeleteNews} className="px-4 py-4 bg-red-100 text-red-600 rounded-2xl font-bold hover:bg-red-200 transition-colors" title="Hapus Berita"><Trash2 size={18} /></button>
+                        )}
+                        <button onClick={handleSaveNews} className="flex-1 py-4 bg-indigo-600 text-white rounded-2xl font-bold transition-all shadow-lg flex items-center justify-center gap-2"><Save size={18} /> {newsForm.id ? 'Simpan Perubahan' : 'Terbitkan Berita'}</button>
+                    </div>
                 </div>
             </Modal>
 
