@@ -348,11 +348,12 @@ export default function App() {
             try {
                 setUser(u);
                 if (u) {
-                    // 1. VERIFICATION CHECK
+                    // 1. VERIFICATION CHECK (Modified to allow Resend)
                     if (!u.emailVerified && !SUPER_ADMIN_EMAILS.includes(u.email)) {
-                        await signOut(auth);
-                        setUserData(null);
-                        requestConfirm("Email Belum Verifikasi", "Silakan cek email Anda dan klik link verifikasi yang telah dikirim.", null, "neutral");
+                        // Jangan logout, tapi arahkan ke view khusus
+                        setUser(u); // Set user agar bisa resend
+                        setUserData(null); // Data user DB belum ada
+                        setView('verify-email');
                         return;
                     }
 
@@ -1054,6 +1055,51 @@ export default function App() {
                                 </div>
                             </div>
                             <button onClick={() => setView('landing')} className="mt-8 flex items-center gap-2 text-slate-400 text-xs font-bold hover:text-indigo-600 transition-colors"><ChevronLeft size={14} /> Kembali ke Beranda</button>
+                        </div>
+                    )}
+
+                    {/* NEW: Verify Email View */}
+                    {view === 'verify-email' && user && (
+                        <div className="flex flex-col items-center justify-center pt-20 animate-[fadeIn_0.5s]">
+                            <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-slate-100 max-w-md w-full text-center">
+                                <div className="w-20 h-20 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-6 animate-pulse">
+                                    <Mail size={32} />
+                                </div>
+                                <h2 className="text-2xl font-black text-slate-800 mb-2">Verifikasi Email</h2>
+                                <p className="text-slate-500 font-medium mb-6">
+                                    Kami telah mengirim link ke <strong>{user.email}</strong>.<br />
+                                    Silakan cek inbox/spam, klik linknya, lalu tekan tombol di bawah.
+                                </p>
+                                <div className="space-y-3">
+                                    <button
+                                        onClick={async () => {
+                                            await user.reload();
+                                            if (user.emailVerified) {
+                                                window.location.reload(); // Reload total untuk trigger Auth State
+                                            } else {
+                                                showToast("Belum terverifikasi. Coba klik link di email Anda.", "error");
+                                            }
+                                        }}
+                                        className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg"
+                                    >
+                                        Saya Sudah Verifikasi
+                                    </button>
+                                    <button
+                                        onClick={async () => {
+                                            try {
+                                                await sendEmailVerification(user);
+                                                showToast("Link verifikasi dikirim ulang!");
+                                            } catch (e) {
+                                                showToast("Gagal kirim ulang (Tunggu beberapa saat)", "error");
+                                            }
+                                        }}
+                                        className="w-full py-3 bg-white text-indigo-600 border border-indigo-200 rounded-xl font-bold hover:bg-indigo-50"
+                                    >
+                                        Kirim Ulang Link
+                                    </button>
+                                    <button onClick={handleLogout} className="text-slate-400 font-bold text-xs hover:text-red-500 mt-4">Keluar / Ganti Akun</button>
+                                </div>
+                            </div>
                         </div>
                     )}
 
