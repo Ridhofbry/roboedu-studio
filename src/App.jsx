@@ -361,7 +361,6 @@ export default function App() {
                         if (!d.isProfileComplete) {
                             setView('profile-setup');
                         } else {
-                            // ✅ Super Admin & Supervisor ke team-list
                             if (d.role === 'super_admin' || d.role === 'supervisor') {
                                 setView('team-list');
                             } else {
@@ -369,12 +368,12 @@ export default function App() {
                             }
                         }
                     } else {
-                        // User not in DB
+                        // User Authenticated but NOT in 'users' DB
                         if (SUPER_ADMIN_EMAILS.includes(u.email)) {
-                            console.log('🔵 DEBUG: Creating new Super Admin user');
+                            // ... Super Admin Creation (Keep as is)
                             const newAdmin = {
                                 email: u.email,
-                                displayName: '',  // ✅ Kosong untuk force profile setup
+                                displayName: '',
                                 photoURL: `https://ui-avatars.com/api/?name=${encodeURIComponent(u.email)}&background=random`,
                                 role: 'super_admin',
                                 isProfileComplete: false,
@@ -384,28 +383,35 @@ export default function App() {
                                 city: '',
                                 bio: 'Super Administrator'
                             };
-                            console.log('🔵 DEBUG: New admin data:', newAdmin);
-
                             await setDoc(docRef, newAdmin);
-                            console.log('🔵 DEBUG: User saved to Firestore');
-
                             setUserData(newAdmin);
-                            console.log('🔵 DEBUG: State updated');
 
-                            const q = query(collection(db, 'pending_users'), where('email', '==', u.email));
-                            const snaps = await getDocs(q);
-                            snaps.forEach(async (doc) => await deleteDoc(doc.ref));
+                            // Cleanup pending if exists
+                            await deleteDoc(doc(db, 'pending_users', u.uid)).catch(() => { });
 
-                            console.log('🔵 DEBUG: Setting view to profile-setup');
                             setView('profile-setup');
                             setProfileForm({ username: '', school: '', city: '' });
-                            console.log('🔵 DEBUG: Profile form reset');
                         } else {
-                            const q = query(collection(db, 'pending_users'), where('email', '==', u.email));
-                            const querySnap = await getDocs(q);
-                            if (querySnap.empty) {
-                                await addDoc(collection(db, 'pending_users'), { email: u.email, displayName: "New User", photoURL: `https://ui-avatars.com/api/?name=${u.email}`, date: new Date().toLocaleDateString(), uid: u.uid });
+                            // REGULAR USER - Add to Pending using UID as Doc ID
+                            try {
+                                const pendingRef = doc(db, 'pending_users', u.uid);
+                                const pendingSnap = await getDoc(pendingRef);
+
+                                // Only create if doesn't exist to preserve date
+                                if (!pendingSnap.exists()) {
+                                    await setDoc(pendingRef, {
+                                        email: u.email,
+                                        displayName: "Calon Member",
+                                        photoURL: `https://ui-avatars.com/api/?name=${u.email}`,
+                                        date: new Date().toLocaleDateString(),
+                                        uid: u.uid
+                                    });
+                                }
+                            } catch (e) {
+                                console.error("Pending creation failed:", e);
+                                // Don't block logout if this fails, but log it.
                             }
+
                             await signOut(auth);
                             setUserData(null);
                             setView('landing');
@@ -417,14 +423,14 @@ export default function App() {
                     setView('landing');
                 }
             } catch (err) {
-                console.error("Auth Error:", err);
+                console.error("Auth process error:", err);
             } finally {
                 setIsAuthChecking(false);
                 setLoadingLogin(false);
             }
         });
         return () => unsubAuth();
-    }, []);
+    }, [auth]);
 
     // --- WELCOME TOAST ---
     useEffect(() => {
@@ -490,17 +496,19 @@ export default function App() {
 
                 // Cek apakah Super Admin (Safety)
                 if (!SUPER_ADMIN_EMAILS.includes(u.email)) {
-                    // Check if already in pending (paranoia check)
-                    const q = query(collection(db, 'pending_users'), where('email', '==', u.email));
-                    const snap = await getDocs(q);
-                    if (snap.empty) {
-                        await addDoc(collection(db, 'pending_users'), {
+                    // Gunakan setDoc dengan UID agar tidak kena error Permissions
+                    try {
+                        const pendingRef = doc(db, 'pending_users', u.uid);
+                        await setDoc(pendingRef, {
                             email: u.email,
                             displayName: "Calon Member",
                             photoURL: `https://ui-avatars.com/api/?name=${u.email}`,
                             date: new Date().toLocaleDateString(),
                             uid: u.uid
                         });
+                    } catch (permError) {
+                        console.error("Gagal simpan ke pending:", permError);
+                        // Lanjut logout biar user tidak terjebak
                     }
 
                     // Force Logout & Redirect
@@ -520,7 +528,7 @@ export default function App() {
         } catch (err) {
             let errorMsg = err.message;
             if (err.code === 'auth/invalid-credential') errorMsg = "Email atau password salah.";
-            if (err.code === 'auth/email-already-in-use') errorMsg = "Email ini sudah terdaftar.";
+            if (err.code === 'auth/email-already-in-use') errorMsg = "Email ini sudah terdaftar. Silakan LOGIN.";
             showToast(errorMsg, "error");
         } finally {
             setLoadingLogin(false);
