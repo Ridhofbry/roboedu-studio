@@ -1527,6 +1527,26 @@ export default function App() {
                     {/* FIX: Real Firebase Storage Upload */}
                     <div>
                         <label className="block text-xs font-bold text-slate-500 mb-1">Upload Foto Profil</label>
+                        <div className="flex flex-col items-center justify-center gap-4 mb-4">
+                            <div className="relative group">
+                                <img
+                                    src={editProfileData.photoURL || "https://ui-avatars.com/api/?name=User&background=random"}
+                                    className="w-24 h-24 rounded-full border-4 border-slate-100 shadow-md object-cover"
+                                    alt="Profile Preview"
+                                />
+                                <button
+                                    onClick={() => document.getElementById('photo-upload').click()}
+                                    className="absolute bottom-0 right-0 p-2 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 transition-transform hover:scale-110"
+                                >
+                                    <Camera size={16} />
+                                </button>
+                            </div>
+                            {editProfileData.photoURL !== userData?.photoURL && (
+                                <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full animate-bounce">
+                                    Foto baru siap disimpan!
+                                </span>
+                            )}
+                        </div>
                         <input
                             type="file"
                             id="photo-upload"
@@ -1534,21 +1554,6 @@ export default function App() {
                             className="hidden"
                             onChange={e => handlePhotoUpload(e.target.files[0])}
                         />
-                        <button
-                            type="button"
-                            onClick={() => document.getElementById('photo-upload').click()}
-                            className="w-full p-4 bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 flex flex-col items-center justify-center gap-2 hover:bg-slate-100 transition-colors cursor-pointer"
-                        >
-                            <Upload size={24} />
-                            <span className="text-sm font-medium">Klik untuk pilih foto dari Galeri</span>
-                            <span className="text-[10px] text-slate-400">Maksimal 2MB (JPG/PNG)</span>
-                        </button>
-                        {editProfileData.photoURL !== userData?.photoURL && (
-                            <div className="mt-2 flex items-center justify-center gap-2 text-emerald-500">
-                                <img src={editProfileData.photoURL} className="w-10 h-10 rounded-full border-2 border-emerald-200" />
-                                <span className="text-xs font-bold">Foto baru siap disimpan!</span>
-                            </div>
-                        )}
                     </div>
                     <button onClick={handleUpdateProfile} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold transition-all shadow-lg flex items-center justify-center gap-2"><Save size={18} /> Simpan Profil</button>
                 </div>
