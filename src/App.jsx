@@ -1377,7 +1377,9 @@ export default function App() {
                                 }).map(p => (
                                     <div key={p.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex flex-col gap-4 hover:shadow-md transition-all">
                                         <div>
-                                            <div className="text-[10px] text-slate-400 mb-1 font-bold">{p.createdAt}</div>
+                                            <div className="text-[10px] text-slate-400 mb-1 font-bold">
+                                                {p.createdAt?.toDate ? p.createdAt.toDate().toLocaleDateString() : (p.createdAt?.seconds ? new Date(p.createdAt.seconds * 1000).toLocaleDateString() : p.createdAt)}
+                                            </div>
                                             <h4 className="font-bold text-slate-700 text-lg leading-tight">{p.title}</h4>
                                         </div>
                                         {p.isBigProject && <BotEvaluation project={p} />}
