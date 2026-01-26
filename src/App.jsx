@@ -1359,7 +1359,7 @@ export default function App() {
                             </div>
 
                             <div className="mb-10">
-                                <PerformanceChart data={getWeeklyAnalytics((userData?.role === 'supervisor' || userData?.role === 'super_admin') ? 'all' : userData?.teamId)} title="Statistik Arsip Mingguan" />
+                                <PerformanceChart data={getWeeklyAnalytics((userData?.role === 'supervisor' || userData?.role === 'super_admin') ? activeTeamId || 'all' : userData?.teamId)} title="Statistik Arsip Mingguan" />
                             </div>
 
                             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
