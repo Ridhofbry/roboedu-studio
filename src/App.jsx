@@ -620,9 +620,11 @@ export default function App() {
         if (u.uid === user.uid) return showToast("Tidak bisa hapus diri sendiri!", "error");
         requestConfirm("Hapus User?", "Data & akses user akan hilang permanen.", async () => {
             try {
-                await deleteDoc(doc(db, 'users', u.id));
+                // Fix: usersList maps doc.id to 'uid', not 'id'
+                await deleteDoc(doc(db, 'users', u.uid));
                 showToast("User berhasil dihapus.");
             } catch (e) {
+                console.error("Delete failed:", e);
                 showToast("Gagal hapus user.", "error");
             }
         }, 'danger');
