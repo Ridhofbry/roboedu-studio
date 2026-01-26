@@ -20,7 +20,8 @@ import {
     signOut,
     onAuthStateChanged,
     setPersistence,
-    browserLocalPersistence
+    browserLocalPersistence,
+    sendEmailVerification
 } from "firebase/auth";
 import {
     getFirestore, doc, setDoc, getDoc, updateDoc, deleteDoc,
@@ -347,6 +348,14 @@ export default function App() {
             try {
                 setUser(u);
                 if (u) {
+                    // 1. VERIFICATION CHECK
+                    if (!u.emailVerified && !SUPER_ADMIN_EMAILS.includes(u.email)) {
+                        await signOut(auth);
+                        setUserData(null);
+                        requestConfirm("Email Belum Verifikasi", "Silakan cek email Anda dan klik link verifikasi yang telah dikirim.", null, "neutral");
+                        return;
+                    }
+
                     const docRef = doc(db, 'users', u.uid);
                     const docSnap = await getDoc(docRef);
                     if (docSnap.exists()) {
@@ -496,30 +505,18 @@ export default function App() {
 
                 // Cek apakah Super Admin (Safety)
                 if (!SUPER_ADMIN_EMAILS.includes(u.email)) {
-                    // Gunakan setDoc dengan UID agar tidak kena error Permissions
-                    try {
-                        const pendingRef = doc(db, 'pending_users', u.uid);
-                        await setDoc(pendingRef, {
-                            email: u.email,
-                            displayName: "Calon Member",
-                            photoURL: `https://ui-avatars.com/api/?name=${u.email}`,
-                            date: new Date().toLocaleDateString(),
-                            uid: u.uid
-                        });
-                    } catch (permError) {
-                        console.error("Gagal simpan ke pending:", permError);
-                        // Lanjut logout biar user tidak terjebak
-                    }
+                    // NEW: Send Verification Email
+                    await sendEmailVerification(u);
 
                     // Force Logout & Redirect
                     await signOut(auth);
                     setUserData(null);
                     setView('landing');
-                    setShowPendingAlert(true);
                     setIsRegistering(false);
                     setAuthEmail('');
                     setAuthPassword('');
-                    showToast("Pendaftaran berhasil! Tunggu persetujuan admin.");
+                    // Show specialized message
+                    requestConfirm("Verifikasi Email", "Link verifikasi telah dikirim ke email Anda. Silakan cek inbox/spam dan klik link tersebut sebelum Login.", null, "neutral");
                 }
                 // If Super Admin, let onAuthStateChanged handle the auto-creation
             } else {
@@ -950,7 +947,7 @@ export default function App() {
 
                             <div className="max-w-4xl mx-auto mb-20">
                                 <h3 className="text-center font-black text-slate-800 text-xl mb-6">Mengenal Tim Kami</h3>
-                                {usersList.length > 0 && (
+                                {usersList.length > 0 ? (
                                     <div className="bg-white rounded-[3rem] shadow-xl p-8 border border-slate-100 relative overflow-hidden">
                                         <div className="absolute top-0 right-0 p-32 bg-indigo-50 rounded-full blur-3xl -mr-16 -mt-16 opacity-50"></div>
                                         <div className="flex flex-col md:flex-row items-center gap-8 relative z-10">
@@ -962,7 +959,7 @@ export default function App() {
                                                     className="w-full h-full rounded-full object-cover border-4 border-white shadow-lg animate-[fadeIn_0.5s]"
                                                 />
                                             </div>
-                                            <div className="text-center md:text-left animate-[slideUp_0.5s] key={`text-${spotlightIndex}`}">
+                                            <div key={`text-${spotlightIndex}`} className="text-center md:text-left animate-[slideUp_0.5s]">
                                                 <div className="inline-block bg-indigo-100 text-indigo-600 px-3 py-1 rounded-full text-[10px] font-bold uppercase mb-2 tracking-wider">
                                                     {usersList[spotlightIndex]?.role?.replace('_', ' ')}
                                                 </div>
@@ -977,6 +974,19 @@ export default function App() {
                                             {usersList.slice(0, 10).map((_, idx) => (
                                                 <div key={idx} className={`h-1.5 rounded-full transition-all duration-500 ${idx === spotlightIndex ? 'w-8 bg-indigo-600' : 'w-2 bg-slate-200'}`}></div>
                                             ))}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    // SKELETON LOADING
+                                    <div className="bg-white rounded-[3rem] shadow-md p-8 border border-slate-100 relative overflow-hidden">
+                                        <div className="flex flex-col md:flex-row items-center gap-8 relative z-10">
+                                            <div className="shrink-0 w-32 h-32 md:w-40 md:h-40 bg-slate-100 rounded-full animate-pulse"></div>
+                                            <div className="flex-1 w-full flex flex-col items-center md:items-start space-y-3">
+                                                <div className="w-20 h-5 bg-slate-100 rounded-full animate-pulse"></div>
+                                                <div className="w-48 h-8 bg-slate-100 rounded-xl animate-pulse"></div>
+                                                <div className="w-full max-w-sm h-4 bg-slate-100 rounded-lg animate-pulse"></div>
+                                                <div className="w-2/3 max-w-sm h-4 bg-slate-100 rounded-lg animate-pulse"></div>
+                                            </div>
                                         </div>
                                     </div>
                                 )}
@@ -1704,6 +1714,6 @@ export default function App() {
                 )}
             </Modal>
 
-        </div>
+        </div >
     );
 }
