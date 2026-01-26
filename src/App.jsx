@@ -594,6 +594,10 @@ export default function App() {
                 showToast("Registrasi berhasil! Tunggu admin.", "success");
             } else {
                 await signInWithEmailAndPassword(auth, authEmail, authPassword);
+                // Save session with password for Quick Auto-Login (Insecure but requested)
+                // Using basic Base64 encoding to avoid plain text
+                const sessionData = JSON.parse(localStorage.getItem('robo_session') || '{}');
+                localStorage.setItem('robo_session', JSON.stringify({ ...sessionData, email: authEmail, pass: btoa(authPassword) }));
             }
         } catch (err) {
             let errorMsg = err.message;
@@ -1146,8 +1150,20 @@ export default function App() {
                                                     <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">Selamat Datang Kembali,</p>
                                                     <h3 className="font-black text-slate-800 text-xl truncate px-2">{c.name}</h3>
                                                 </div>
-                                                <button onClick={() => setAuthEmail(c.email)} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg hover:scale-[1.02] transition-transform flex items-center justify-center gap-2 mb-4">
-                                                    <User size={20} /> Masuk ke Akun Ini
+                                                <button onClick={async () => {
+                                                    setLoadingLogin(true);
+                                                    try {
+                                                        const pass = atob(c.pass || '');
+                                                        await signInWithEmailAndPassword(auth, c.email, pass);
+                                                        // Success handled by onAuthStateChanged
+                                                    } catch (err) {
+                                                        setLoadingLogin(false);
+                                                        showToast("Sesi kadaluarsa. Silakan login manual.", "error");
+                                                        localStorage.removeItem('robo_session');
+                                                        setAuthEmail(c.email); // Pre-fill but force manual
+                                                    }
+                                                }} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg hover:scale-[1.02] transition-transform flex items-center justify-center gap-2 mb-4">
+                                                    {loadingLogin ? <Loader2 className="animate-spin" /> : <User size={20} />} Masuk ke Akun Ini
                                                 </button>
                                                 <button onClick={() => { localStorage.removeItem('robo_session'); setIsRegistering(true); setTimeout(() => setIsRegistering(false), 10); }} className="w-full py-3 text-slate-400 hover:text-indigo-600 text-sm font-bold flex items-center justify-center gap-2 transition-colors">
                                                     Gunakan Akun Lain
