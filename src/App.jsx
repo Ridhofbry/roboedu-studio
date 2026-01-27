@@ -1202,10 +1202,10 @@ export default function App() {
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF();
 
+
             // Get team data
-            const teamName = teamId === 'team1' ? 'Tim 1' :
-                teamId === 'team2' ? 'Tim 2' :
-                    teamId === 'team_khusus' ? 'Tim Khusus' : 'Unknown';
+            const teamData = TEAMS.find(t => t.id === teamId);
+            const teamName = teamData ? teamData.name : 'Unknown Team';
 
             // Get team members
             const teamMembers = usersList.filter(u => u.teamId === teamId);
