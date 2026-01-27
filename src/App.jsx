@@ -883,6 +883,10 @@ export default function App() {
                     return showToast("Email belum diverifikasi! Cek inbox Anda.", "error");
                 }
 
+                // Force token refresh to update email_verified claim in ID token
+                await u.reload();
+                await u.getIdToken(true);
+
                 // Email verified ✅ - Check if user exists in 'users' collection
                 const userDocSnap = await getDoc(doc(db, 'users', u.uid));
 
