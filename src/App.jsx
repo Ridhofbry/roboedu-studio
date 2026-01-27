@@ -20,7 +20,8 @@ import {
     signOut,
     onAuthStateChanged,
     setPersistence,
-    browserLocalPersistence
+    browserLocalPersistence,
+    sendEmailVerification
 } from "firebase/auth";
 import {
     getFirestore, doc, setDoc, getDoc, updateDoc, deleteDoc,
@@ -839,40 +840,90 @@ export default function App() {
     };
 
     // AUTH
+    // AUTH
     const handleEmailAuth = async (e) => {
         e.preventDefault();
         setLoadingLogin(true);
         setShowPendingAlert(false);
+
+        // Validation
+        if (!authEmail || !authPassword) {
+            setLoadingLogin(false);
+            return showToast("Email & Password wajib diisi!", "error");
+        }
+        if (isRegistering && (!authName || !authCity)) {
+            setLoadingLogin(false);
+            return showToast("Nama & Asal Kota wajib diisi!", "error");
+        }
+
         try {
             if (isRegistering) {
-                // EXPLICIT REGISTRATION FLOW
+                // REGISTRATION: Create account + send verification email
                 const userCredential = await createUserWithEmailAndPassword(auth, authEmail, authPassword);
                 const u = userCredential.user;
 
-                // 1. Create Pending User Doc explicitly
-                await addDoc(collection(db, 'pending_users'), {
-                    email: u.email,
-                    displayName: authName || "New Member", // Use real name or fallback
-                    city: authCity || "-",
-                    photoURL: `https://ui-avatars.com/api/?name=${encodeURIComponent(authName || u.email)}&background=random`,
-                    date: new Date().toLocaleDateString(),
-                    uid: u.uid
-                });
+                // Send Email Verification
+                await sendEmailVerification(u);
 
-                // 2. Immediate Sign Out (prevent auto-login)
+                // Sign out immediately (don't add to pending_users yet)
                 await signOut(auth);
 
-                // 3. UI Feedback
-                setShowPendingAlert(true);
+                // UI Feedback
                 setView('landing');
-                showToast("Registrasi berhasil! Tunggu admin.", "success");
+                showToast("Registrasi berhasil! Cek email dan klik link verifikasi, lalu login kembali.", "success");
             } else {
-                await signInWithEmailAndPassword(auth, authEmail, authPassword);
+                // LOGIN FLOW
+                const userCredential = await signInWithEmailAndPassword(auth, authEmail, authPassword);
+                const u = userCredential.user;
+
+                // STRICT: Check if email is verified
+                if (!u.emailVerified) {
+                    await signOut(auth);
+                    setLoadingLogin(false);
+                    return showToast("Email belum diverifikasi! Cek inbox Anda.", "error");
+                }
+
+                // Email verified ✅ - Check if user exists in 'users' collection
+                const userDocSnap = await getDoc(doc(db, 'users', u.uid));
+
+                if (userDocSnap.exists()) {
+                    // User already approved, proceed normally
+                    // Auth state listener will handle the rest
+                } else {
+                    // Not in 'users' - check if already in 'pending_users'
+                    const pendingQuery = query(collection(db, 'pending_users'), where('uid', '==', u.uid));
+                    const pendingSnapshot = await getDocs(pendingQuery);
+
+                    if (pendingSnapshot.empty) {
+                        // First verified login - add to pending_users
+                        await addDoc(collection(db, 'pending_users'), {
+                            email: u.email,
+                            displayName: authName || u.email.split('@')[0],
+                            city: authCity || "-",
+                            photoURL: u.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.email)}&background=random`,
+                            date: new Date().toLocaleDateString(),
+                            uid: u.uid,
+                            emailVerified: true
+                        });
+                    }
+
+                    // Sign out and show pending status
+                    await signOut(auth);
+                    setShowPendingAlert(true);
+                    setView('landing');
+                    showToast("Akun menunggu persetujuan admin.", "success");
+                }
             }
         } catch (err) {
+            console.error("Auth Error:", err);
             let errorMsg = err.message;
             if (err.code === 'auth/invalid-credential') errorMsg = "Email atau password salah.";
-            if (err.code === 'auth/email-already-in-use') errorMsg = "Email ini sudah terdaftar.";
+            if (err.code === 'auth/email-already-in-use') errorMsg = "Email ini sudah terdaftar. Silakan login.";
+            if (err.code === 'auth/missing-email') errorMsg = "Email tidak boleh kosong.";
+            if (err.code === 'auth/weak-password') errorMsg = "Password terlalu lemah (min 6 karakter).";
+            if (err.code === 'auth/invalid-email') errorMsg = "Format email tidak valid.";
+            if (err.code === 'auth/user-not-found') errorMsg = "Akun tidak ditemukan.";
+
             showToast(errorMsg, "error");
         } finally {
             setLoadingLogin(false);
