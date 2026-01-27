@@ -564,6 +564,7 @@ export default function App() {
     const [isApprovalModalOpen, setIsApprovalModalOpen] = useState(false);
     const [showAIModal, setShowAIModal] = useState(false);
     const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', action: null, type: 'neutral' });
+    const [isConfirming, setIsConfirming] = useState(false); // Fix: Prevent double execution
     const [isAILoading, setIsAILoading] = useState(false);
 
     // --- HELPERS ---
@@ -820,7 +821,20 @@ export default function App() {
     const autoCorrectGDriveLink = (url) => { const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/); return match && match[1] ? `https://lh3.googleusercontent.com/d/${match[1]}` : url; };
 
     const requestConfirm = (title, message, action, type = 'danger') => { setConfirmModal({ isOpen: true, title, message, action, type }); };
-    const executeConfirmAction = () => { if (confirmModal.action) confirmModal.action(); setConfirmModal({ ...confirmModal, isOpen: false }); };
+
+    const executeConfirmAction = async () => {
+        if (!confirmModal.action || isConfirming) return;
+        setIsConfirming(true);
+        try {
+            await confirmModal.action();
+        } catch (error) {
+            console.error("Confirm Action Error:", error);
+            showToast("Gagal melakukan aksi.", "error");
+        } finally {
+            setIsConfirming(false);
+            setConfirmModal({ ...confirmModal, isOpen: false, action: null }); // Clear action
+        }
+    };
 
     // AUTH
     const handleEmailAuth = async (e) => {
@@ -2109,8 +2123,11 @@ export default function App() {
                     <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce ${confirmModal.type === 'danger' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>{confirmModal.type === 'danger' ? <AlertCircle size={32} /> : <CheckCircle2 size={32} />}</div>
                     <p className="text-sm text-slate-600 mb-6 font-medium leading-relaxed">{confirmModal.message}</p>
                     <div className="flex gap-3">
-                        <button onClick={() => setConfirmModal({ ...confirmModal, isOpen: false })} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold">Batal</button>
-                        <button onClick={executeConfirmAction} className={`flex-1 py-3 text-white rounded-xl font-bold ${confirmModal.type === 'danger' ? 'bg-red-500' : 'bg-blue-600'}`}>Ya, Lanjutkan</button>
+                        <button onClick={() => setConfirmModal({ ...confirmModal, isOpen: false })} disabled={isConfirming} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold disabled:opacity-50">Batal</button>
+                        <button onClick={executeConfirmAction} disabled={isConfirming} className={`flex-1 py-3 text-white rounded-xl font-bold flex items-center justify-center gap-2 ${confirmModal.type === 'danger' ? 'bg-red-500' : 'bg-blue-600'} disabled:opacity-70 disabled:cursor-not-allowed`}>
+                            {isConfirming && <Loader2 size={18} className="animate-spin" />}
+                            {isConfirming ? "Memproses..." : "Ya, Lanjutkan"}
+                        </button>
                     </div>
                 </div>
             </Modal>
