@@ -275,6 +275,8 @@ const WORKFLOW_STEPS = [
     }
 ];
 
+const ALL_TASK_IDS = WORKFLOW_STEPS.flatMap(s => s.tasks.map(t => t.id));
+
 
 
 
@@ -2035,7 +2037,7 @@ export default function App() {
                                             setView('dashboard');
                                         }
                                     }} className="mb-2 text-xs font-bold text-slate-400 hover:text-indigo-600 flex items-center gap-1"><ChevronLeft size={14} /> Kembali</button>
-                                    <h2 className="text-3xl font-black text-slate-800">Arsip Project (Fixed)</h2>
+                                    <h2 className="text-3xl font-black text-slate-800">Arsip Project</h2>
                                     <p className="text-sm text-slate-500 mt-1">Project yang sudah selesai</p>
                                 </div>
                             </div>
@@ -2080,6 +2082,9 @@ export default function App() {
                                                 <a href={p.finalLink} target="_blank" className="flex items-center justify-center gap-2 w-full py-3 bg-emerald-50 text-emerald-600 rounded-xl text-sm font-bold border border-emerald-100 hover:bg-emerald-100 transition-colors">
                                                     <LinkIcon size={16} /> Buka Hasil Final
                                                 </a>
+                                            )}
+                                            {(userData?.role === 'supervisor' || userData?.role === 'super_admin') && (
+                                                <button onClick={(e) => { e.stopPropagation(); handleDeleteProject(p.id); }} className="mt-3 w-full py-3 bg-red-50 text-red-500 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-red-100 transition-colors"><Trash2 size={16} /> Hapus Permanen</button>
                                             )}
                                         </div>
                                     ))}
