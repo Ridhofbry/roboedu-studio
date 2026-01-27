@@ -691,11 +691,50 @@ export default function App() {
         return () => unsubAuth();
     }, []);
 
-    // --- DATA LISTENERS ---
+    // --- DATA LISTENERS (PUBLIC) ---
     useEffect(() => {
         if (!db) return;
 
-        // Error Handler
+        const handleDbError = (context) => (error) => {
+            console.error(`Error fetching ${context}:`, error);
+        };
+
+        const unsubNews = onSnapshot(collection(db, 'news'),
+            (s) => setNews(s.docs.map(d => ({ id: d.id, ...d.data() }))),
+            handleDbError("News")
+        );
+
+        const unsubConfig = onSnapshot(doc(db, 'site_config', 'main'), (d) => {
+            if (d.exists()) {
+                const data = d.data();
+                if (data.logo) setSiteLogo(data.logo);
+                // MIGRATION: Handle both single object (Legacy) and Array (New)
+                if (Array.isArray(data.weekly)) {
+                    setWeeklyHighlights(data.weekly);
+                } else if (data.weekly) {
+                    setWeeklyHighlights([data.weekly]);
+                } else {
+                    setWeeklyHighlights([{
+                        id: 1,
+                        title: "Weekly Highlight",
+                        image: "https://images.unsplash.com/photo-1522071820081-009f0129c71c"
+                    }]);
+                }
+            }
+        }, handleDbError("Config"));
+
+        return () => { unsubNews(); unsubConfig(); };
+    }, []);
+
+    // --- DATA LISTENERS (PROTECTED) ---
+    useEffect(() => {
+        if (!db || !user) {
+            // Clear protected data on logout
+            setProjects([]);
+            setAssets([]);
+            return;
+        }
+
         const handleDbError = (context) => (error) => {
             console.error(`Error fetching ${context}:`, error);
             if (error.code === 'permission-denied') {
@@ -708,39 +747,13 @@ export default function App() {
             handleDbError("Projects")
         );
 
-        const unsubNews = onSnapshot(collection(db, 'news'),
-            (s) => setNews(s.docs.map(d => ({ id: d.id, ...d.data() }))),
-            handleDbError("News")
-        );
-
         const unsubAssets = onSnapshot(collection(db, 'assets'),
             (s) => setAssets(s.docs.map(d => ({ id: d.id, ...d.data() }))),
             handleDbError("Assets")
         );
 
-        const unsubConfig = onSnapshot(doc(db, 'site_config', 'main'), (d) => {
-            if (d.exists()) {
-                const data = d.data();
-                if (data.logo) setSiteLogo(data.logo);
-                // MIGRATION: Handle both single object (Legacy) and Array (New)
-                if (Array.isArray(data.weekly)) {
-                    setWeeklyHighlights(data.weekly);
-                } else if (data.weekly) {
-                    // Legacy: Wrap single object in array
-                    setWeeklyHighlights([data.weekly]);
-                } else {
-                    // Default if missing
-                    setWeeklyHighlights([{
-                        id: 1,
-                        title: "Weekly Highlight",
-                        image: "https://images.unsplash.com/photo-1522071820081-009f0129c71c"
-                    }]);
-                }
-            }
-        }, handleDbError("Config"));
-
-        return () => { unsubProj(); unsubNews(); unsubAssets(); unsubConfig(); };
-    }, []);
+        return () => { unsubProj(); unsubAssets(); };
+    }, [user]);
 
     // --- AUTO-SYNC ACTIVE PROJECT ---
     // Fixes issue where checklist updates don't show immediately
