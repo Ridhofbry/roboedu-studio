@@ -20,8 +20,7 @@ import {
     signOut,
     onAuthStateChanged,
     setPersistence,
-    browserLocalPersistence,
-    sendEmailVerification
+    browserLocalPersistence
 } from "firebase/auth";
 import {
     getFirestore, doc, setDoc, getDoc, updateDoc, deleteDoc,
@@ -30,6 +29,19 @@ import {
 // IMPORT STORAGE
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+
+// --- HELPER FUNCTION FOR DATES ---
+const formatFirestoreDate = (date) => {
+    if (!date) return '-';
+    try {
+        if (typeof date === 'string') return date;
+        if (date?.toDate && typeof date.toDate === 'function') return date.toDate().toLocaleDateString();
+        if (date?.seconds) return new Date(date.seconds * 1000).toLocaleDateString();
+        return 'Invalid Date';
+    } catch (e) {
+        return 'Date Error';
+    }
+};
 
 /* ========================================================================
    1. KONFIGURASI API & SAFETY CHECK
@@ -260,7 +272,20 @@ export default function App() {
     const [pendingUsers, setPendingUsers] = useState([]);
 
     // Content States
-    const [weeklyContent, setWeeklyContent] = useState({ title: "Belum ada highlight", image: "" });
+    const [weeklyHighlights, setWeeklyHighlights] = useState([]);
+    const [currentSlide, setCurrentSlide] = useState(0);
+    const [isPaused, setIsPaused] = useState(false);
+
+    // AUTO-SLIDE LOGIC
+    useEffect(() => {
+        if (!isPaused && weeklyHighlights.length > 1) {
+            const interval = setInterval(() => {
+                setCurrentSlide(prev => (prev + 1) % weeklyHighlights.length);
+            }, 10000); // 10 Detik
+            return () => clearInterval(interval);
+        }
+    }, [weeklyHighlights.length, isPaused]);
+
     const [siteLogo, setSiteLogo] = useState("https://lh3.googleusercontent.com/d/1uJHar8EYXpRnL8uaPvhePEHWG-BasH9m");
 
     // UI States
@@ -323,15 +348,8 @@ export default function App() {
 
         projects.forEach(p => {
             if (p.status === 'Completed' && p.completedAt) {
-                let d;
-                try {
-                    // Robust Date Parsing
-                    if (p.completedAt?.toDate) d = p.completedAt.toDate();
-                    else if (p.completedAt?.seconds) d = new Date(p.completedAt.seconds * 1000);
-                    else d = new Date(p.completedAt);
-                } catch (e) { return; }
-
-                if (d && !isNaN(d.getTime()) && d >= start && (teamId === 'all' || p.teamId === teamId)) {
+                const d = new Date(p.completedAt);
+                if (d >= start && (teamId === 'all' || String(p.teamId) === String(teamId))) {
                     const idx = d.getDay() === 0 ? 6 : d.getDay() - 1;
                     data[idx]++;
                 }
@@ -348,19 +366,19 @@ export default function App() {
             try {
                 setUser(u);
                 if (u) {
-                    // 1. VERIFICATION CHECK (Modified to allow Resend)
-                    if (!u.emailVerified && !SUPER_ADMIN_EMAILS.includes(u.email)) {
-                        // Jangan logout, tapi arahkan ke view khusus
-                        setUser(u); // Set user agar bisa resend
-                        setUserData(null); // Data user DB belum ada
-                        setView('verify-email');
-                        return;
-                    }
-
                     const docRef = doc(db, 'users', u.uid);
                     const docSnap = await getDoc(docRef);
                     if (docSnap.exists()) {
                         const d = docSnap.data();
+
+                        // --- AUTO-FIX: Typo 'tema-' -> 'team-' ---
+                        if (d.teamId && typeof d.teamId === 'string' && d.teamId.includes('tema-')) {
+                            const fixedId = d.teamId.replace('tema-', 'team-');
+                            console.log(`🔵 FIXING TYPO: ${d.teamId} -> ${fixedId}`);
+                            await updateDoc(docRef, { teamId: fixedId });
+                            d.teamId = fixedId; // Use fixed value locally
+                        }
+
                         if (SUPER_ADMIN_EMAILS.includes(u.email) && d.role !== 'super_admin') {
                             await updateDoc(docRef, { role: 'super_admin' });
                             setUserData({ ...d, role: 'super_admin' });
@@ -371,6 +389,7 @@ export default function App() {
                         if (!d.isProfileComplete) {
                             setView('profile-setup');
                         } else {
+                            // ✅ Super Admin & Supervisor ke team-list
                             if (d.role === 'super_admin' || d.role === 'supervisor') {
                                 setView('team-list');
                             } else {
@@ -378,12 +397,12 @@ export default function App() {
                             }
                         }
                     } else {
-                        // User Authenticated but NOT in 'users' DB
+                        // User not in DB
                         if (SUPER_ADMIN_EMAILS.includes(u.email)) {
-                            // ... Super Admin Creation (Keep as is)
+                            console.log('🔵 DEBUG: Creating new Super Admin user');
                             const newAdmin = {
                                 email: u.email,
-                                displayName: '',
+                                displayName: '',  // ✅ Kosong untuk force profile setup
                                 photoURL: `https://ui-avatars.com/api/?name=${encodeURIComponent(u.email)}&background=random`,
                                 role: 'super_admin',
                                 isProfileComplete: false,
@@ -393,39 +412,29 @@ export default function App() {
                                 city: '',
                                 bio: 'Super Administrator'
                             };
+                            console.log('🔵 DEBUG: New admin data:', newAdmin);
+
                             await setDoc(docRef, newAdmin);
+                            console.log('🔵 DEBUG: User saved to Firestore');
+
                             setUserData(newAdmin);
+                            console.log('🔵 DEBUG: State updated');
 
-                            // Cleanup pending if exists
-                            await deleteDoc(doc(db, 'pending_users', u.uid)).catch(() => { });
+                            const q = query(collection(db, 'pending_users'), where('email', '==', u.email));
+                            const snaps = await getDocs(q);
+                            snaps.forEach(async (doc) => await deleteDoc(doc.ref));
 
+                            console.log('🔵 DEBUG: Setting view to profile-setup');
                             setView('profile-setup');
                             setProfileForm({ username: '', school: '', city: '' });
+                            console.log('🔵 DEBUG: Profile form reset');
                         } else {
-                            // REGULAR USER - Add to Pending using UID as Doc ID
-                            try {
-                                const pendingRef = doc(db, 'pending_users', u.uid);
+                            // Cek apakah sudah ada di pending list?
+                            const q = query(collection(db, 'pending_users'), where('email', '==', u.email));
+                            const querySnap = await getDocs(q);
 
-                                // SECURITY: Force refresh token to ensure 'email_verified' is true
-                                await u.getIdToken(true);
-
-                                // Try to CREATE. 
-                                // Note: If doc exists, this counts as UPDATE. 
-                                // If 'update' is denied by rules, this throws error.
-                                // We catch it and assume "Already Pending".
-                                await setDoc(pendingRef, {
-                                    email: u.email,
-                                    displayName: "Calon Member",
-                                    photoURL: `https://ui-avatars.com/api/?name=${u.email}`,
-                                    date: new Date().toLocaleDateString(),
-                                    uid: u.uid
-                                });
-                            } catch (e) {
-                                // If error is 'permission-denied', it likely means the user is already pending
-                                // (because 'update' is restricted to admin, but 'create' is allowed for verified users)
-                                console.log("Pending creation skipped (likely exists):", e.message);
-                            }
-
+                            // Jika user tidak ada di DB User & tidak ada di Pending -> Berarti Ghost User / Error Register
+                            // Kita tidak otomatis buat di sini lagi, karena sudah ditangani di handleEmailAuth
 
                             await signOut(auth);
                             setUserData(null);
@@ -438,35 +447,74 @@ export default function App() {
                     setView('landing');
                 }
             } catch (err) {
-                console.error("Auth process error:", err);
+                console.error("Auth Error:", err);
             } finally {
                 setIsAuthChecking(false);
                 setLoadingLogin(false);
             }
         });
         return () => unsubAuth();
-    }, [auth]);
-
-    // --- WELCOME TOAST ---
-    useEffect(() => {
-        if (userData?.teamId && userData?.displayName && !sessionStorage.getItem('welcome_toast_shown')) {
-            const teamName = TEAMS.find(t => t.id === userData.teamId)?.name || 'Tim';
-            showToast(`Selamat Datang di ${teamName}, ${userData.displayName.split(' ')[0]}!`);
-            sessionStorage.setItem('welcome_toast_shown', 'true');
-        }
-    }, [userData]);
+    }, []);
 
     // --- DATA LISTENERS ---
     useEffect(() => {
         if (!db) return;
-        const unsubProj = onSnapshot(collection(db, 'projects'), (s) => setProjects(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-        const unsubNews = onSnapshot(collection(db, 'news'), (s) => setNews(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-        const unsubAssets = onSnapshot(collection(db, 'assets'), (s) => setAssets(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+
+        // Error Handler
+        const handleDbError = (context) => (error) => {
+            console.error(`Error fetching ${context}:`, error);
+            if (error.code === 'permission-denied') {
+                showToast(`Akses Ditolak: Gagal memuat ${context}. Cek Rules!`, "error");
+            }
+        };
+
+        const unsubProj = onSnapshot(collection(db, 'projects'),
+            (s) => setProjects(s.docs.map(d => ({ id: d.id, ...d.data() }))),
+            handleDbError("Projects")
+        );
+
+        const unsubNews = onSnapshot(collection(db, 'news'),
+            (s) => setNews(s.docs.map(d => ({ id: d.id, ...d.data() }))),
+            handleDbError("News")
+        );
+
+        const unsubAssets = onSnapshot(collection(db, 'assets'),
+            (s) => setAssets(s.docs.map(d => ({ id: d.id, ...d.data() }))),
+            handleDbError("Assets")
+        );
+
         const unsubConfig = onSnapshot(doc(db, 'site_config', 'main'), (d) => {
-            if (d.exists()) { const data = d.data(); if (data.logo) setSiteLogo(data.logo); if (data.weekly) setWeeklyContent(data.weekly); }
-        });
+            if (d.exists()) {
+                const data = d.data();
+                if (data.logo) setSiteLogo(data.logo);
+                // MIGRATION: Handle both single object (Legacy) and Array (New)
+                if (Array.isArray(data.weekly)) {
+                    setWeeklyHighlights(data.weekly);
+                } else if (data.weekly) {
+                    // Legacy: Wrap single object in array
+                    setWeeklyHighlights([data.weekly]);
+                } else {
+                    // Default if missing
+                    setWeeklyHighlights([{
+                        id: 1,
+                        title: "Weekly Highlight",
+                        image: "https://images.unsplash.com/photo-1522071820081-009f0129c71c"
+                    }]);
+                }
+            }
+        }, handleDbError("Config"));
+
         return () => { unsubProj(); unsubNews(); unsubAssets(); unsubConfig(); };
     }, []);
+
+    // --- AUTO-SYNC ACTIVE PROJECT ---
+    // Fixes issue where checklist updates don't show immediately
+    useEffect(() => {
+        if (activeProject && projects.length > 0) {
+            const updated = projects.find(p => p.id === activeProject.id);
+            if (updated) setActiveProject(updated);
+        }
+    }, [projects]);
 
     useEffect(() => {
         if (!db) return;
@@ -492,7 +540,23 @@ export default function App() {
 
     // --- HANDLERS ---
     const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); };
-    const isTaskLocked = (taskId, completedTasks) => { const idx = ALL_TASK_IDS.indexOf(taskId); return idx > 0 && !completedTasks.includes(ALL_TASK_IDS[idx - 1]); };
+    // STRICT SEQUENCE LOCK: Enforce step-by-step progress
+    const isTaskLocked = (taskId, completedTasks) => {
+        const idx = ALL_TASK_IDS.indexOf(taskId);
+
+        // 1. Basic Sequential Lock (Must complete previous task first)
+        if (idx > 0 && !completedTasks.includes(ALL_TASK_IDS[idx - 1])) return true;
+
+        // 2. Gatekeeper Logic (Special Step 4 -> Step 5 Block)
+        // If current task is in Step 5 (Final), check if Project is Approved
+        const step5Tasks = ['t5-1', 't5-2'];
+        if (step5Tasks.includes(taskId)) {
+            // Task in Final Step is LOCKED if Project is NOT Approved yet
+            if (!activeProject?.isApproved) return true;
+        }
+
+        return false;
+    };
     const autoCorrectGDriveLink = (url) => { const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/); return match && match[1] ? `https://lh3.googleusercontent.com/d/${match[1]}` : url; };
 
     const requestConfirm = (title, message, action, type = 'danger') => { setConfirmModal({ isOpen: true, title, message, action, type }); };
@@ -506,32 +570,32 @@ export default function App() {
         try {
             if (isRegistering) {
                 // EXPLICIT REGISTRATION FLOW
-                const res = await createUserWithEmailAndPassword(auth, authEmail, authPassword);
-                const u = res.user;
+                const userCredential = await createUserWithEmailAndPassword(auth, authEmail, authPassword);
+                const u = userCredential.user;
 
-                // Cek apakah Super Admin (Safety)
-                if (!SUPER_ADMIN_EMAILS.includes(u.email)) {
-                    // NEW: Send Verification Email
-                    await sendEmailVerification(u);
+                // 1. Create Pending User Doc explicitly
+                await addDoc(collection(db, 'pending_users'), {
+                    email: u.email,
+                    displayName: "New Member",
+                    photoURL: `https://ui-avatars.com/api/?name=${u.email}&background=random`,
+                    date: new Date().toLocaleDateString(),
+                    uid: u.uid
+                });
 
-                    // Force Logout & Redirect
-                    await signOut(auth);
-                    setUserData(null);
-                    setView('landing');
-                    setIsRegistering(false);
-                    setAuthEmail('');
-                    setAuthPassword('');
-                    // Show specialized message
-                    requestConfirm("Verifikasi Email", "Link verifikasi telah dikirim ke email Anda. Silakan cek inbox/spam dan klik link tersebut sebelum Login.", null, "neutral");
-                }
-                // If Super Admin, let onAuthStateChanged handle the auto-creation
+                // 2. Immediate Sign Out (prevent auto-login)
+                await signOut(auth);
+
+                // 3. UI Feedback
+                setShowPendingAlert(true);
+                setView('landing');
+                showToast("Registrasi berhasil! Tunggu admin.", "success");
             } else {
                 await signInWithEmailAndPassword(auth, authEmail, authPassword);
             }
         } catch (err) {
             let errorMsg = err.message;
             if (err.code === 'auth/invalid-credential') errorMsg = "Email atau password salah.";
-            if (err.code === 'auth/email-already-in-use') errorMsg = "Email ini sudah terdaftar. Silakan LOGIN.";
+            if (err.code === 'auth/email-already-in-use') errorMsg = "Email ini sudah terdaftar.";
             showToast(errorMsg, "error");
         } finally {
             setLoadingLogin(false);
@@ -571,22 +635,22 @@ export default function App() {
 
     const handlePhotoUpload = async (file) => {
         if (!file) return;
-        if (file.size > 2 * 1024 * 1024) return showToast("Maksimal 2MB!", "error");
+        if (!storage) return showToast("Storage tidak tersedia", "error");
 
         try {
-            console.log('🔵 DEBUG: Processing photo to Base64...');
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onloadend = async () => {
-                const base64Photo = reader.result;
-                await updateDoc(doc(db, 'users', user.uid), { photoURL: base64Photo });
-                setUserData({ ...userData, photoURL: base64Photo });
-                setEditProfileData({ ...editProfileData, photoURL: base64Photo });
-                showToast('Foto profil berhasil diupdate!');
-            };
+            console.log('🔵 DEBUG: Uploading photo...', file.name);
+            const fileRef = ref(storage, `profile-photos/${user.uid}/${Date.now()}_${file.name}`);
+            await uploadBytes(fileRef, file);
+            const photoURL = await getDownloadURL(fileRef);
+            console.log('🔵 DEBUG: Photo uploaded:', photoURL);
+
+            await updateDoc(doc(db, 'users', user.uid), { photoURL });
+            setUserData({ ...userData, photoURL });
+            setEditProfileData({ ...editProfileData, photoURL });
+            showToast('Foto berhasil diupload!');
         } catch (e) {
-            console.error('Photo error:', e);
-            showToast('Gagal update foto: ' + e.message, 'error');
+            console.error('Upload error:', e);
+            showToast('Upload gagal: ' + e.message, 'error');
         }
     };
 
@@ -619,19 +683,6 @@ export default function App() {
         } catch (e) { showToast("Gagal Approve", "error"); }
     };
     const handleRejectUser = (u) => { requestConfirm("Tolak?", "Hapus user.", async () => { await deleteDoc(doc(db, 'pending_users', u.id)); showToast("Ditolak."); }); };
-    const handleDeleteUser = (u) => {
-        if (u.uid === user.uid) return showToast("Tidak bisa hapus diri sendiri!", "error");
-        requestConfirm("Hapus User?", "Data & akses user akan hilang permanen.", async () => {
-            try {
-                // Fix: usersList maps doc.id to 'uid', not 'id'
-                await deleteDoc(doc(db, 'users', u.uid));
-                showToast("User berhasil dihapus.");
-            } catch (e) {
-                console.error("Delete failed:", e);
-                showToast("Gagal hapus user.", "error");
-            }
-        }, 'danger');
-    };
 
     // PROJECTS
     const handleAddProject = async () => {
@@ -673,15 +724,7 @@ export default function App() {
             showToast("Gagal buat project: " + error.message, "error");
         }
     };
-    const handleUpdateProjectFirestore = async (id, data) => {
-        // Optimistic Update for instant typing
-        setProjects(prev => prev.map(p => p.id === id ? { ...p, ...data } : p));
-        // FIX: Also update activeProject if it matches, otherwise inputs lag/reset
-        if (activeProject && activeProject.id === id) {
-            setActiveProject(prev => ({ ...prev, ...data }));
-        }
-        try { await updateDoc(doc(db, 'projects', id), data); } catch (e) { showToast("Gagal update project", "error"); }
-    };
+    const handleUpdateProjectFirestore = async (id, data) => { try { await updateDoc(doc(db, 'projects', id), data); } catch (e) { showToast("Gagal update project", "error"); } };
     const handleDeleteProject = (id) => { requestConfirm("Hapus Project?", "Permanen.", async () => { await deleteDoc(doc(db, 'projects', id)); if (activeProject?.id === id) { setActiveProject(null); setView('dashboard'); } showToast("Project Dihapus"); }); };
     const toggleTask = (projId, taskId) => {
         const proj = projects.find(p => p.id === projId);
@@ -699,52 +742,151 @@ export default function App() {
     };
     const handleRemoveImage = (index) => { const newImages = [...activeProject.previewImages]; newImages[index] = null; handleUpdateProjectFirestore(activeProject.id, { previewImages: newImages }); };
     const handleImageSubmit = async () => { if (imageUploadState.slotIndex !== null) { const newImages = [...activeProject.previewImages]; newImages[imageUploadState.slotIndex] = imageUploadState.urlInput; await handleUpdateProjectFirestore(activeProject.id, { previewImages: newImages }); setImageUploadState({ isOpen: false, slotIndex: null, urlInput: '' }); showToast("Foto tersimpan!"); } };
-    const handleSubmitPreview = (proj) => { if (!proj.previewLink) return showToast("Link kosong!", "error"); handleUpdateProjectFirestore(proj.id, { status: "Preview Submitted" }); sendOneSignalNotification('supervisor', `Review preview: "${proj.title}"`, TEAMS.find(t => t.id === proj.teamId)?.name); };
-    const handleApprovalAction = (isApproved, feedback) => { if (!isApproved && !feedback) return showToast("Isi revisi!", "error"); handleUpdateProjectFirestore(activeProject.id, { isApproved, status: isApproved ? "Approved" : "Revision Needed", feedback: isApproved ? "" : feedback }); sendOneSignalNotification('creator', isApproved ? "Preview Approved" : "Revisi Baru", TEAMS.find(t => t.id === activeProject.teamId)?.name); };
-    const handleSubmitFinalRegular = (proj) => { if (!proj.finalLink) return showToast("Link kosong!", "error"); requestConfirm("Submit Final?", "Project ke Arsip.", () => { handleUpdateProjectFirestore(proj.id, { status: "Completed", progress: 100, completedAt: new Date().toISOString() }); sendOneSignalNotification('supervisor', `FINAL SUBMIT: ${proj.title}`, TEAMS.find(t => t.id === proj.teamId)?.name); setView('dashboard'); }, 'neutral'); };
-    const handleProposeConcept = () => { if (!activeProject.finalLink) return showToast("Isi link!", "error"); handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Pending' }); sendOneSignalNotification('supervisor', `Pengajuan: ${activeProject.title}`, 'Tim 5'); };
-    const handleReviewProposal = (isAcc, feedback) => { if (isAcc) { handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Approved', feedback: '' }); sendOneSignalNotification('creator', `Konsep DISETUJUI.`, 'Tim 5'); } else { if (!feedback) return showToast("Isi pesan!", "error"); handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Revision', feedback }); sendOneSignalNotification('creator', `REVISI Konsep: ${feedback}`, 'Tim 5'); } };
-    const handleRePropose = () => { handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Pending' }); sendOneSignalNotification('supervisor', `Pengajuan ULANG: "${activeProject.title}"`, 'Tim 5'); };
-    const handleSubmitFinalTim5 = () => { requestConfirm("Yakin Submit?", "Project selesai.", () => { handleUpdateProjectFirestore(activeProject.id, { status: "Completed", progress: 100, completedAt: new Date().toISOString() }); sendOneSignalNotification('supervisor', `FINAL SUBMIT Tim 5: ${activeProject.title}`, 'Tim 5'); setView('dashboard'); }, 'neutral'); };
+    // --- NOTIFICATION HELPERS ---
+    const getTeamName = (proj) => TEAMS.find(t => t.id === proj.teamId)?.name || 'Unknown Team';
+
+    const handleSubmitPreview = (proj) => {
+        if (!proj.previewLink) return showToast("Link kosong!", "error");
+
+        // VALIDATION: Must be Google Drive
+        if (!proj.previewLink.includes('drive.google.com') && !proj.previewLink.includes('docs.google.com')) {
+            return showToast("Wajib Link Google Drive!", "error");
+        }
+
+        requestConfirm("Kirim Preview?", "Notifikasi akan dikirim ke Supervisor.", () => {
+            handleUpdateProjectFirestore(proj.id, { status: "Preview Submitted" });
+            // 1. Notify Supervisor
+            sendOneSignalNotification('supervisor', `Review preview: "${proj.title}"`, getTeamName(proj));
+            // 2. Notify Creator (Confirmation)
+            sendOneSignalNotification('creator', `Preview Terkirim: "${proj.title}"`, getTeamName(proj));
+
+            showToast("Preview Terkirim ke Supervisor! 📤");
+        }, 'neutral');
+    };
+
+    const handleApprovalAction = (isApproved, feedback) => {
+        if (!isApproved && !feedback) return showToast("Isi revisi!", "error");
+
+        const statusMsg = isApproved ? "Preview Approved" : "Revisi Baru";
+
+        requestConfirm(isApproved ? "Approve Preview?" : "Kirim Revisi?", `Tim ${getTeamName(activeProject)} akan dapat notifikasi.`, () => {
+            handleUpdateProjectFirestore(activeProject.id, {
+                isApproved,
+                status: isApproved ? "Approved" : "Revision Needed",
+                feedback: isApproved ? "" : feedback
+            });
+            sendOneSignalNotification('creator', statusMsg, getTeamName(activeProject));
+            showToast(isApproved ? "Approved! Tim diberitahu. ✅" : "Revisi Terkirim! 📢");
+        }, isApproved ? 'success' : 'danger');
+    };
+
+    const handleSubmitFinalRegular = (proj) => {
+        if (!proj.finalLink) return showToast("Link kosong!", "error");
+
+        // VALIDATION: Must be Google Drive
+        if (!proj.finalLink.includes('drive.google.com') && !proj.finalLink.includes('docs.google.com')) {
+            return showToast("Wajib Link Google Drive!", "error");
+        }
+
+        requestConfirm("Submit Final?", "Project akan ditandai SELESAI & Masuk Arsip.", () => {
+            handleUpdateProjectFirestore(proj.id, { status: "Completed", progress: 100, completedAt: new Date().toISOString() });
+            sendOneSignalNotification('supervisor', `FINAL SUBMIT: ${proj.title}`, getTeamName(proj));
+
+            // Notify Creator too (Validation)
+            sendOneSignalNotification('creator', `Sukses Submit Final: ${proj.title}`, getTeamName(proj));
+
+            setView('dashboard');
+            showToast("Project Selesai! 🎉");
+        }, 'neutral');
+    };
+
+    const handleProposeConcept = () => {
+        if (!activeProject.finalLink) return showToast("Isi link!", "error");
+        handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Pending' });
+        sendOneSignalNotification('supervisor', `Pengajuan: ${activeProject.title}`, 'Tim 5');
+        sendOneSignalNotification('creator', `Konsep Diajukan: ${activeProject.title}`, 'Tim 5');
+    };
+
+    const handleReviewProposal = (isAcc, feedback) => {
+        if (isAcc) {
+            handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Approved', feedback: '' });
+            sendOneSignalNotification('creator', `Konsep DISETUJUI.`, 'Tim 5');
+        } else {
+            if (!feedback) return showToast("Isi pesan!", "error");
+            handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Revision', feedback });
+            sendOneSignalNotification('creator', `REVISI Konsep: ${feedback}`, 'Tim 5');
+        }
+    };
+
+    const handleRePropose = () => {
+        handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Pending' });
+        sendOneSignalNotification('supervisor', `Pengajuan ULANG: "${activeProject.title}"`, 'Tim 5');
+        sendOneSignalNotification('creator', `Revisi Dikirim: "${activeProject.title}"`, 'Tim 5');
+    };
+
+    const handleSubmitFinalTim5 = () => {
+        requestConfirm("Yakin Submit?", "Project selesai.", () => {
+            handleUpdateProjectFirestore(activeProject.id, { status: "Completed", progress: 100, completedAt: new Date().toISOString() });
+            sendOneSignalNotification('supervisor', `FINAL SUBMIT Tim 5: ${activeProject.title}`, 'Tim 5');
+            sendOneSignalNotification('creator', `Sukses Submit Final: ${activeProject.title}`, 'Tim 5');
+            setView('dashboard');
+        }, 'neutral');
+    };
     const handleAddAsset = async () => { if (!newAssetForm.title) return; await addDoc(collection(db, 'assets'), { ...newAssetForm, date: new Date().toLocaleDateString() }); setIsAddAssetOpen(false); showToast("Aset Ditambah"); };
     const handleDeleteAsset = (id) => { requestConfirm("Hapus Aset?", "Permanen.", async () => { await deleteDoc(doc(db, 'assets', id)); showToast("Aset Dihapus"); }); };
-    const handleSaveNews = async () => {
-        if (newsForm.id) {
-            await updateDoc(doc(db, 'news', newsForm.id), newsForm);
-            showToast("Berita Update");
-        } else {
-            await addDoc(collection(db, 'news'), {
-                ...newsForm,
-                date: new Date().toLocaleDateString(),
-                category: "Info" // Default category
-            });
-            showToast("Berita Ditambahkan");
-        }
-        setIsEditNewsOpen(false);
-    };
-    const handleDeleteNews = () => {
-        if (!newsForm.id) return;
-        requestConfirm("Hapus Berita?", "Data tidak bisa dikembalikan.", async () => {
-            await deleteDoc(doc(db, 'news', newsForm.id));
-            setIsEditNewsOpen(false);
-            showToast("Berita Dihapus");
-        }, 'danger');
-    };
+    const handleSaveNews = async () => { if (newsForm.id) { await updateDoc(doc(db, 'news', newsForm.id), newsForm); } setIsEditNewsOpen(false); showToast("Berita Update"); };
     const handleSaveLogo = async () => { await setDoc(doc(db, 'site_config', 'main'), { logo: logoForm }, { merge: true }); setIsEditLogoOpen(false); showToast("Logo Update"); };
-    const handleSaveWeekly = async () => {
+    // --- CAROUSEL HANDLERS ---
+    const handleAddSlide = async () => {
+        if (!weeklyForm.title || !weeklyForm.image) return showToast("Isi judul & gambar!", "error");
+        // Ensure migration to array if empty
+        const current = Array.isArray(weeklyHighlights) ? weeklyHighlights : [];
+        const newSlides = [...current, { ...weeklyForm, id: Date.now() }];
+
+        setWeeklyHighlights(newSlides); // Optimistic
+        await setDoc(doc(db, 'site_config', 'main'), { weekly: newSlides }, { merge: true });
+        setIsEditWeeklyOpen(false);
+        showToast("Slide Ditambahkan!");
+    };
+
+    const handleDeleteSlide = async (slideId) => {
+        const newSlides = weeklyHighlights.filter(s => s.id !== slideId);
+        setWeeklyHighlights(newSlides);
+        await setDoc(doc(db, 'site_config', 'main'), { weekly: newSlides }, { merge: true });
+        showToast("Slide Dihapus");
+    };
+
+    // --- AUTO-NEWS BOT ---
+    const generateNewsFromInternet = async () => {
+        const confirm = window.confirm("Jalankan Bot Pencari Berita? (Mengambil dari Internet)");
+        if (!confirm) return;
+
+        setIsAILoading(true);
         try {
-            console.log("🔵 DEBUG: Saving weekly highlight...", weeklyForm);
-            // Optimistic update
-            setWeeklyContent(weeklyForm);
+            // Fetch Real Tech/Science News (SpaceFlightNews is free, open, and reliable)
+            const res = await fetch('https://api.spaceflightnewsapi.net/v3/articles?_limit=3');
+            if (!res.ok) throw new Error("Gagal mengambil data dari internet.");
 
-            await setDoc(doc(db, 'site_config', 'main'), { weekly: weeklyForm }, { merge: true });
-            console.log("🔵 DEBUG: Weekly highlight saved to Firestore");
+            const data = await res.json();
+            let addedCount = 0;
 
-            setIsEditWeeklyOpen(false);
-            showToast("Highlight Update Success!");
+            for (const item of data) {
+                await addDoc(collection(db, 'news'), {
+                    title: item.title,
+                    summary: item.summary.substring(0, 80) + "...",
+                    content: item.summary + "\n\n(Berita Otomatis dari Bot)",
+                    category: "Teknologi",
+                    date: new Date().toLocaleDateString(),
+                    createdAt: new Date().toISOString() // Helper for sorting
+                });
+                addedCount++;
+            }
+            showToast(`Bot berhasil menambahkan ${addedCount} berita baru! 🤖`, "success");
         } catch (e) {
-            console.error("🔴 ERROR Saving Weekly:", e);
-            showToast("Gagal update: " + e.message, "error");
+            console.error("Bot Error:", e);
+            showToast("Bot Error: " + e.message, "error");
+        } finally {
+            setIsAILoading(false);
         }
     };
     const handleScript = async () => { setIsAILoading(true); const text = await generateAIScript(aiPrompt); setAiResult(text); setIsAILoading(false); };
@@ -934,16 +1076,42 @@ export default function App() {
                                 <p className="text-slate-500 font-medium max-w-lg mx-auto leading-relaxed">Platform manajemen konten terintegrasi. Login dibatasi hanya untuk anggota yang telah disetujui oleh Administrator.</p>
                             </div>
 
-                            <div className="max-w-5xl mx-auto bg-white p-4 rounded-[2.5rem] shadow-xl border border-slate-100 mb-12 relative group overflow-hidden hover:shadow-2xl transition-all duration-500">
+                            <div className="max-w-5xl mx-auto bg-white p-4 rounded-[2.5rem] shadow-xl border border-slate-100 mb-12 relative group overflow-hidden hover:shadow-2xl transition-all duration-500"
+                                onMouseEnter={() => setIsPaused(true)}
+                                onMouseLeave={() => setIsPaused(false)}>
                                 <div className="relative rounded-[2rem] overflow-hidden aspect-video shadow-inner bg-slate-200">
-                                    <img src={weeklyContent.image} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" alt="Highlight" />
-                                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent p-6 md:p-10 flex flex-col justify-end text-white">
-                                        <span className="self-start bg-pink-500/90 backdrop-blur-sm text-white px-3 py-1 rounded-lg text-[10px] font-bold uppercase mb-2 shadow-lg tracking-wider">Weekly Highlight</span>
-                                        <h2 className="text-2xl md:text-4xl font-bold leading-tight">{weeklyContent.title}</h2>
-                                    </div>
+                                    {weeklyHighlights.length > 0 ? (
+                                        <>
+                                            <img
+                                                key={currentSlide}
+                                                src={weeklyHighlights[currentSlide]?.image || "https://images.unsplash.com/photo-1522071820081-009f0129c71c"}
+                                                className="w-full h-full object-cover transition-transform duration-700 animate-[fadeIn_0.5s]"
+                                                alt="Highlight"
+                                            />
+                                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent p-6 md:p-10 flex flex-col justify-end text-white">
+                                                <span className="self-start bg-pink-500/90 backdrop-blur-sm text-white px-3 py-1 rounded-lg text-[10px] font-bold uppercase mb-2 shadow-lg tracking-wider">Weekly Highlight</span>
+                                                <h2 className="text-2xl md:text-4xl font-bold leading-tight drop-shadow-md">{weeklyHighlights[currentSlide]?.title}</h2>
+                                            </div>
+                                            {/* Dots Indicator */}
+                                            <div className="absolute bottom-6 right-6 flex gap-2 z-10">
+                                                {weeklyHighlights.map((_, idx) => (
+                                                    <button
+                                                        key={idx}
+                                                        onClick={(e) => { e.stopPropagation(); setCurrentSlide(idx); }}
+                                                        className={`h-2 rounded-full transition-all shadow-sm ${currentSlide === idx ? 'w-8 bg-white' : 'w-2 bg-white/50 hover:bg-white/90'}`}
+                                                    />
+                                                ))}
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div className="flex flex-col items-center justify-center h-full text-slate-400">
+                                            <ImageIcon size={48} className="mb-2 opacity-50" />
+                                            <p className="font-bold">Belum ada slide.</p>
+                                        </div>
+                                    )}
                                 </div>
                                 {(userData?.role === 'supervisor' || userData?.role === 'super_admin') && (
-                                    <button onClick={() => { setWeeklyForm(weeklyContent); setIsEditWeeklyOpen(true); }} className="absolute top-8 right-8 bg-white/90 backdrop-blur text-slate-800 px-4 py-2 rounded-full text-xs font-bold shadow-lg flex items-center gap-2 hover:scale-105 transition-transform z-20 opacity-0 group-hover:opacity-100"><Edit3 size={14} className="text-indigo-600" /> Edit Highlight</button>
+                                    <button onClick={() => { setWeeklyForm({ title: '', image: '' }); setIsEditWeeklyOpen(true); }} className="absolute top-8 right-8 bg-white/90 backdrop-blur text-slate-800 px-4 py-3 rounded-full text-xs font-bold shadow-lg flex items-center gap-2 hover:scale-105 transition-transform z-20 opacity-0 group-hover:opacity-100"><Settings size={16} className="text-indigo-600" /> Atur Slide</button>
                                 )}
                             </div>
 
@@ -951,14 +1119,19 @@ export default function App() {
                             <div className="max-w-5xl mx-auto mb-12">
                                 <WeeklyBotReport projects={projects} />
                             </div>
-
-                            {(userData?.role === 'supervisor' || userData?.role === 'super_admin') && (
-                                <div className="max-w-5xl mx-auto mb-6 flex justify-end">
-                                    <button onClick={() => { setNewsForm({ id: null, title: '', summary: '', content: '' }); setIsEditNewsOpen(true); }} className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold text-sm shadow-lg hover:bg-indigo-700 transition-all flex items-center gap-2">
-                                        <Plus size={18} /> Tambah Berita
-                                    </button>
-                                </div>
-                            )}
+                            <div className="max-w-5xl mx-auto mb-6 flex justify-end gap-3 animate-[fadeIn_0.5s]">
+                                {(userData?.role === 'supervisor' || userData?.role === 'super_admin') && (
+                                    <>
+                                        <button onClick={generateNewsFromInternet} className="bg-white text-indigo-600 border border-indigo-200 px-6 py-3 rounded-xl font-bold text-sm shadow-sm hover:bg-indigo-50 transition-all flex items-center gap-2">
+                                            {isAILoading ? <Loader2 size={18} className="animate-spin" /> : <Bot size={18} />}
+                                            Auto-News Bot
+                                        </button>
+                                        <button onClick={() => { setNewsForm({ id: null, title: '', summary: '', content: '' }); setIsEditNewsOpen(true); }} className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold text-sm shadow-lg hover:bg-indigo-700 transition-all flex items-center gap-2">
+                                            <Plus size={18} /> Tambah Berita
+                                        </button>
+                                    </>
+                                )}
+                            </div>
 
                             <div className="grid md:grid-cols-3 gap-6 mb-20">
                                 {news.map(n => (
@@ -982,7 +1155,7 @@ export default function App() {
 
                             <div className="max-w-4xl mx-auto mb-20">
                                 <h3 className="text-center font-black text-slate-800 text-xl mb-6">Mengenal Tim Kami</h3>
-                                {usersList.length > 0 ? (
+                                {usersList.length > 0 && (
                                     <div className="bg-white rounded-[3rem] shadow-xl p-8 border border-slate-100 relative overflow-hidden">
                                         <div className="absolute top-0 right-0 p-32 bg-indigo-50 rounded-full blur-3xl -mr-16 -mt-16 opacity-50"></div>
                                         <div className="flex flex-col md:flex-row items-center gap-8 relative z-10">
@@ -994,7 +1167,7 @@ export default function App() {
                                                     className="w-full h-full rounded-full object-cover border-4 border-white shadow-lg animate-[fadeIn_0.5s]"
                                                 />
                                             </div>
-                                            <div key={`text-${spotlightIndex}`} className="text-center md:text-left animate-[slideUp_0.5s]">
+                                            <div className="text-center md:text-left animate-[slideUp_0.5s] key={`text-${spotlightIndex}`}">
                                                 <div className="inline-block bg-indigo-100 text-indigo-600 px-3 py-1 rounded-full text-[10px] font-bold uppercase mb-2 tracking-wider">
                                                     {usersList[spotlightIndex]?.role?.replace('_', ' ')}
                                                 </div>
@@ -1009,19 +1182,6 @@ export default function App() {
                                             {usersList.slice(0, 10).map((_, idx) => (
                                                 <div key={idx} className={`h-1.5 rounded-full transition-all duration-500 ${idx === spotlightIndex ? 'w-8 bg-indigo-600' : 'w-2 bg-slate-200'}`}></div>
                                             ))}
-                                        </div>
-                                    </div>
-                                ) : (
-                                    // SKELETON LOADING
-                                    <div className="bg-white rounded-[3rem] shadow-md p-8 border border-slate-100 relative overflow-hidden">
-                                        <div className="flex flex-col md:flex-row items-center gap-8 relative z-10">
-                                            <div className="shrink-0 w-32 h-32 md:w-40 md:h-40 bg-slate-100 rounded-full animate-pulse"></div>
-                                            <div className="flex-1 w-full flex flex-col items-center md:items-start space-y-3">
-                                                <div className="w-20 h-5 bg-slate-100 rounded-full animate-pulse"></div>
-                                                <div className="w-48 h-8 bg-slate-100 rounded-xl animate-pulse"></div>
-                                                <div className="w-full max-w-sm h-4 bg-slate-100 rounded-lg animate-pulse"></div>
-                                                <div className="w-2/3 max-w-sm h-4 bg-slate-100 rounded-lg animate-pulse"></div>
-                                            </div>
                                         </div>
                                     </div>
                                 )}
@@ -1092,56 +1252,10 @@ export default function App() {
                         </div>
                     )}
 
-                    {/* NEW: Verify Email View */}
-                    {view === 'verify-email' && user && (
-                        <div className="flex flex-col items-center justify-center pt-20 animate-[fadeIn_0.5s]">
-                            <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-slate-100 max-w-md w-full text-center">
-                                <div className="w-20 h-20 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-6 animate-pulse">
-                                    <Mail size={32} />
-                                </div>
-                                <h2 className="text-2xl font-black text-slate-800 mb-2">Verifikasi Email</h2>
-                                <p className="text-slate-500 font-medium mb-6">
-                                    Kami telah mengirim link ke <strong>{user.email}</strong>.<br />
-                                    Silakan cek inbox/spam, klik linknya, lalu tekan tombol di bawah.
-                                </p>
-                                <div className="space-y-3">
-                                    <button
-                                        onClick={async () => {
-                                            await user.reload();
-                                            if (user.emailVerified) {
-                                                await user.getIdToken(true); // Force Refresh Token
-                                                window.location.reload(); // Reload total untuk trigger Auth State
-                                            } else {
-                                                showToast("Belum terverifikasi. Coba klik link di email Anda.", "error");
-                                            }
-                                        }}
-                                        className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg"
-                                    >
-                                        Saya Sudah Verifikasi
-                                    </button>
-                                    <button
-                                        onClick={async () => {
-                                            try {
-                                                await sendEmailVerification(user);
-                                                showToast("Link verifikasi dikirim ulang!");
-                                            } catch (e) {
-                                                showToast("Gagal kirim ulang (Tunggu beberapa saat)", "error");
-                                            }
-                                        }}
-                                        className="w-full py-3 bg-white text-indigo-600 border border-indigo-200 rounded-xl font-bold hover:bg-indigo-50"
-                                    >
-                                        Kirim Ulang Link
-                                    </button>
-                                    <button onClick={handleLogout} className="text-slate-400 font-bold text-xs hover:text-red-500 mt-4">Keluar / Ganti Akun</button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
                     {/* User Management */}
                     {view === 'user-management' && userData?.role === 'super_admin' && (
                         <div className="pt-20 animate-[fadeIn_0.3s]">
-                            <div className="flex items-center gap-2 mb-6"><button onClick={() => setView('team-list')} className="p-2 bg-white rounded-full hover:bg-slate-100"><ChevronLeft /></button><h2 className="text-3xl font-black text-slate-800">Manajemen Akses</h2></div>
+                            <div className="flex items-center gap-2 mb-6"><button onClick={() => setView('dashboard')} className="p-2 bg-white rounded-full hover:bg-slate-100"><ChevronLeft /></button><h2 className="text-3xl font-black text-slate-800">Manajemen Akses</h2></div>
                             <div className="grid md:grid-cols-2 gap-8">
                                 <div className="bg-white p-6 rounded-[2rem] border border-orange-100 shadow-lg relative overflow-hidden">
                                     <div className="absolute top-0 left-0 w-full h-1 bg-orange-400"></div>
@@ -1163,18 +1277,10 @@ export default function App() {
                                 <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
                                     <h3 className="font-bold text-lg mb-4 flex items-center gap-2 text-slate-700"><Users size={20} /> User Terdaftar ({usersList.length})</h3>
                                     <div className="space-y-3 max-h-96 overflow-y-auto custom-scrollbar">
-                                        {usersList.map((u, idx) => (
-                                            <div key={idx} className="flex items-center gap-3 p-3 hover:bg-slate-50 rounded-xl transition-colors group">
-                                                <img src={u.photoURL} className="w-8 h-8 rounded-full bg-slate-200 object-cover" />
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="font-bold text-sm text-slate-800 truncate">{u.displayName}</div>
-                                                    <div className="text-[10px] uppercase font-bold text-indigo-500">{u.role?.replace('_', ' ')}</div>
-                                                </div>
-                                                {u.uid !== user.uid && (
-                                                    <button onClick={() => handleDeleteUser(u)} className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Hapus User">
-                                                        <Trash2 size={16} />
-                                                    </button>
-                                                )}
+                                        {usersList.slice(0, 10).map((u, idx) => (
+                                            <div key={idx} className="flex items-center gap-3 p-3 hover:bg-slate-50 rounded-xl transition-colors">
+                                                <img src={u.photoURL} className="w-8 h-8 rounded-full bg-slate-200" />
+                                                <div className="flex-1"><div className="font-bold text-sm text-slate-800">{u.displayName}</div><div className="text-[10px] uppercase font-bold text-indigo-500">{u.role}</div></div>
                                             </div>
                                         ))}
                                     </div>
@@ -1204,7 +1310,7 @@ export default function App() {
                             </div>
                             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
                                 {TEAMS.map(team => {
-                                    const count = projects.filter(p => p.teamId === team.id && p.status !== 'Completed').length;
+                                    const count = projects.filter(p => String(p.teamId) === String(team.id) && p.status !== 'Completed').length;
                                     return (
                                         <div key={team.id} onClick={() => { setActiveTeamId(team.id); setView('dashboard'); }} className={`bg-white p-6 rounded-[2rem] border cursor-pointer hover:scale-105 transition-all shadow-sm group ${team.isSpecial ? 'border-amber-200 bg-amber-50/50' : 'border-slate-100 hover:border-indigo-200'}`}>
                                             <div className="flex items-center gap-4 mb-4">
@@ -1253,38 +1359,6 @@ export default function App() {
                                 </div>
                             </div>
 
-                            <div className="mb-8 animate-[fadeIn_0.5s]">
-                                <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2">
-                                    <Users size={18} className="text-indigo-600" />
-                                    Anggota Tim
-                                </h3>
-                                <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar">
-                                    {usersList
-                                        .filter(u => {
-                                            if (userData?.role === 'supervisor' || userData?.role === 'super_admin') {
-                                                return activeTeamId ? u.teamId === activeTeamId : false;
-                                            } else {
-                                                return u.teamId === userData?.teamId;
-                                            }
-                                        })
-                                        .map(u => (
-                                            <div key={u.id} className="min-w-[140px] p-4 bg-white rounded-2xl border border-slate-100 shadow-sm flex flex-col items-center text-center hover:scale-105 transition-transform">
-                                                <img src={u.photoURL || `https://ui-avatars.com/api/?name=${u.displayName}`} className="w-12 h-12 rounded-full mb-2 bg-slate-100 object-cover border-2 border-white shadow-sm" />
-                                                <h4 className="font-bold text-slate-800 text-xs truncate w-full" title={u.displayName}>{u.displayName}</h4>
-                                                <span className="text-[10px] text-slate-500 font-medium uppercase">{u.role?.replace('_', ' ')}</span>
-                                            </div>
-                                        ))
-                                    }
-                                    {usersList.filter(u => {
-                                        if (userData?.role === 'supervisor' || userData?.role === 'super_admin') {
-                                            return activeTeamId ? u.teamId === activeTeamId : false;
-                                        } else {
-                                            return u.teamId === userData?.teamId;
-                                        }
-                                    }).length === 0 && <div className="text-slate-400 text-xs italic pl-2">Belum ada anggota tim lain.</div>}
-                                </div>
-                            </div>
-
                             <PerformanceChart
                                 data={getWeeklyAnalytics((userData?.role === 'supervisor' || userData?.role === 'super_admin') ? activeTeamId || 'all' : userData?.teamId)}
                                 title="Statistik Mingguan"
@@ -1293,16 +1367,13 @@ export default function App() {
                             <div className="grid md:grid-cols-2 gap-4 mt-6">
                                 {projects
                                     .filter(p => {
-                                        // Filter 1: Exclude completed
                                         if (p.status === 'Completed') return false;
 
-                                        // Filter 2: Team-based access
                                         if (userData?.role === 'supervisor' || userData?.role === 'super_admin') {
-                                            // Admin/Supervisor: If activeTeamId selected, show only that team
-                                            return activeTeamId ? (p.teamId === activeTeamId) : true;
+                                            return activeTeamId ? (String(p.teamId) === String(activeTeamId)) : true;
                                         } else {
-                                            // Creator: Show only own team
-                                            return p.teamId === userData?.teamId;
+                                            // Robust string check
+                                            return String(p.teamId) === String(userData?.teamId);
                                         }
                                     })
                                     .map(p => (
@@ -1313,6 +1384,23 @@ export default function App() {
                                         </div>
                                     ))}
                             </div>
+
+
+                            {/* Empty State with Debug Info */}
+                            {projects.filter(p => p.status !== 'Completed' && (userData?.role === 'supervisor' || userData?.role === 'super_admin' ? (activeTeamId ? String(p.teamId).toLowerCase().trim() === String(activeTeamId).toLowerCase().trim() : true) : String(p.teamId).toLowerCase().trim() === String(userData?.teamId).toLowerCase().trim())).length === 0 && (
+                                <div className="text-center py-12 text-slate-400">
+                                    <FolderOpen size={48} className="mx-auto mb-4 opacity-50" />
+                                    <p className="font-bold">Belum ada project aktif di Tim ini.</p>
+                                    <p className="text-xs mt-2 max-w-xs mx-auto">Sistem hanya menampilkan Project yang memiliki <b>teamId</b> sama persis dengan akun Anda.</p>
+                                    <div className="text-[10px] mt-4 font-mono opacity-50 bg-slate-100 inline-block px-4 py-2 rounded text-left">
+                                        <p>Debug Info:</p>
+                                        <p>My Account Team: "{userData?.teamId}"</p>
+                                        <p>Total Projects in DB: {projects.length}</p>
+                                        <p>Sample Project Team: "{projects[0]?.teamId || 'N/A'}"</p>
+                                        <p>Matching Status: {projects.some(p => String(p.teamId).trim() === String(userData?.teamId).trim()) ? "MATCH FOUND (Hidden?)" : "NO MATCH"}</p>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -1348,13 +1436,13 @@ export default function App() {
                                                     <div>
                                                         <label className="text-xs font-black text-amber-700 uppercase block mb-2 tracking-wider">Script & Naskah</label>
                                                         <div className="relative">
-                                                            <textarea disabled={userData?.role !== 'tim_khusus'} className="w-full bg-white p-4 rounded-2xl text-sm font-medium text-slate-700 border border-amber-200 h-60 outline-none focus:ring-4 focus:ring-amber-200/50 transition-all custom-scrollbar resize-none shadow-sm" value={activeProject.script || ''} onChange={e => handleUpdateProjectFirestore(activeProject.id, { script: e.target.value })} placeholder="Isi naskah detail disini..." />
+                                                            <textarea disabled={userData?.role !== 'tim_khusus'} className="w-full bg-white p-4 rounded-2xl text-sm font-medium text-slate-700 border border-amber-200 h-60 outline-none focus:ring-4 focus:ring-amber-200/50 transition-all custom-scrollbar resize-none shadow-sm" value={activeProject.script} onChange={e => handleUpdateProjectFirestore(activeProject.id, { script: e.target.value })} placeholder="Isi naskah detail disini..." />
                                                             {userData?.role === 'tim_khusus' && <button onClick={() => setShowAIModal(true)} className="absolute bottom-4 right-4 p-2 bg-amber-500 text-white rounded-lg shadow hover:bg-amber-600 transition-transform hover:scale-110"><Wand2 size={16} /></button>}
                                                         </div>
                                                     </div>
                                                     <div>
                                                         <label className="text-xs font-black text-amber-700 uppercase block mb-2 tracking-wider">List Alat & Equipment</label>
-                                                        <textarea disabled={userData?.role !== 'tim_khusus'} className="w-full bg-white p-4 rounded-2xl text-sm font-medium text-slate-700 border border-amber-200 h-60 outline-none focus:ring-4 focus:ring-amber-200/50 transition-all custom-scrollbar resize-none shadow-sm" value={activeProject.equipment || ''} onChange={e => handleUpdateProjectFirestore(activeProject.id, { equipment: e.target.value })} placeholder="List kamera, lighting, audio..." />
+                                                        <textarea disabled={userData?.role !== 'tim_khusus'} className="w-full bg-white p-4 rounded-2xl text-sm font-medium text-slate-700 border border-amber-200 h-60 outline-none focus:ring-4 focus:ring-amber-200/50 transition-all custom-scrollbar resize-none shadow-sm" value={activeProject.equipment} onChange={e => handleUpdateProjectFirestore(activeProject.id, { equipment: e.target.value })} placeholder="List kamera, lighting, audio..." />
                                                     </div>
                                                 </div>
                                                 <div className="mb-8">
@@ -1513,53 +1601,7 @@ export default function App() {
                         </div>
                     )}
 
-                    {/* Archive View */}
-                    {view === 'archive' && (
-                        <div className="pt-20 animate-[fadeIn_0.3s]">
-                            <div className="flex justify-between items-end mb-8">
-                                <div>
-                                    <button onClick={() => setView('landing')} className="mb-2 text-xs font-bold text-slate-400 hover:text-indigo-600 flex items-center gap-1"><ChevronLeft size={14} /> Kembali ke Beranda</button>
-                                    <h2 className="text-3xl font-black text-slate-800">Arsip Project</h2>
-                                </div>
-                            </div>
 
-                            <div className="mb-10 animate-[fadeIn_0.5s]">
-                                <PerformanceChart data={getWeeklyAnalytics((userData?.role === 'supervisor' || userData?.role === 'super_admin') ? activeTeamId || 'all' : userData?.teamId)} title="Statistik Arsip Mingguan" />
-                            </div>
-
-                            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                {projects.filter(p => {
-                                    if (p.status !== 'Completed') return false;
-                                    if (userData?.role !== 'supervisor' && userData?.role !== 'super_admin' && p.teamId !== userData?.teamId) return false;
-                                    return true;
-                                }).map(p => (
-                                    <div key={p.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex flex-col gap-4 hover:shadow-md transition-all">
-                                        <div>
-                                            <div className="text-[10px] text-slate-400 mb-1 font-bold">
-                                                {p.createdAt?.toDate ? p.createdAt.toDate().toLocaleDateString() : (p.createdAt?.seconds ? new Date(p.createdAt.seconds * 1000).toLocaleDateString() : p.createdAt)}
-                                            </div>
-                                            <h4 className="font-bold text-slate-700 text-lg leading-tight">{p.title}</h4>
-                                        </div>
-                                        {p.isBigProject && <BotEvaluation project={p} />}
-
-                                        <div className="flex gap-2 mt-auto">
-                                            {/* LINK & DELETE ONLY FOR ADMIN OR IF LINK IS PUBLIC (Here restricted) */}
-                                            {p.finalLink && (userData?.role === 'supervisor' || userData?.role === 'super_admin') ? (
-                                                <a href={p.finalLink} target="_blank" className="flex-1 py-2 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center hover:bg-indigo-100 transition-colors font-bold text-xs"><LinkIcon size={14} className="mr-2" /> Drive</a>
-                                            ) : (
-                                                <div className="flex-1 py-2 bg-slate-50 text-slate-400 rounded-xl flex items-center justify-center font-bold text-xs cursor-not-allowed"><Lock size={12} className="mr-2" /> Protected</div>
-                                            )}
-
-                                            {(userData?.role === 'supervisor' || userData?.role === 'super_admin') && (
-                                                <button onClick={(e) => { e.stopPropagation(); handleDeleteProject(p.id); }} className="p-2 bg-red-50 text-red-500 rounded-xl hover:bg-red-100 transition-colors"><Trash2 size={18} /></button>
-                                            )}
-                                        </div>
-                                    </div>
-                                ))}
-                                {projects.filter(p => p.status === 'Completed').length === 0 && <div className="col-span-full text-center py-10 text-slate-400 font-medium">Belum ada project yang diarsipkan.</div>}
-                            </div>
-                        </div>
-                    )}
 
                     {/* Assets View Logic */}
                     {view === 'assets' && (
@@ -1575,7 +1617,8 @@ export default function App() {
                             </div>
                             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                                 {assets.map(a => (
-                                    <div key={a.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex items-center gap-4 hover:shadow-lg transition-all group relative">
+                                    <div key={a.id} onClick={() => a.link && window.open(a.link, '_blank')} className={`bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex items-center gap-4 hover:shadow-lg transition-all group relative ${a.link ? 'cursor-pointer hover:border-indigo-300' : ''}`}>
+                                        {a.link && <div className="absolute top-2 right-2 text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity"><LinkIcon size={12} /></div>}
                                         <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 text-white shadow-md ${a.type === 'folder' ? 'bg-blue-500' : a.type === 'audio' ? 'bg-pink-500' : 'bg-purple-500'}`}>{a.type === 'folder' ? <FolderOpen size={24} /> : a.type === 'audio' ? <Mic size={24} /> : <FileVideo size={24} />}</div>
                                         <div className="flex-1 min-w-0"><h4 className="font-bold text-slate-800 text-sm truncate">{a.title}</h4><p className="text-xs text-slate-400 font-bold">{a.size}</p></div>
                                         {(userData?.role === 'supervisor' || userData?.role === 'super_admin') && (
@@ -1599,7 +1642,7 @@ export default function App() {
                             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                                 {projects.filter(p => p.finalLink).map(p => (
                                     <div key={p.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-lg transition-all">
-                                        <div className="flex justify-between mb-4"><span className="text-[10px] bg-slate-100 px-2 py-1 rounded-md font-bold uppercase text-slate-600">{TEAMS.find(t => t.id === p.teamId)?.name}</span><span className="text-[10px] text-slate-400 font-bold">{p.createdAt?.toDate ? p.createdAt.toDate().toLocaleDateString() : p.createdAt}</span></div>
+                                        <div className="flex justify-between mb-4"><span className="text-[10px] bg-slate-100 px-2 py-1 rounded-md font-bold uppercase text-slate-600">{TEAMS.find(t => t.id === p.teamId)?.name}</span><span className="text-[10px] text-slate-400 font-bold">{formatFirestoreDate(p.createdAt)}</span></div>
                                         <h3 className="font-bold text-slate-800 text-lg mb-6 leading-tight">{p.title}</h3>
                                         <a href={p.finalLink} target="_blank" className="flex items-center justify-center gap-2 w-full py-3 bg-emerald-50 text-emerald-600 rounded-xl text-sm font-bold border border-emerald-100 hover:bg-emerald-100 transition-colors"><LinkIcon size={16} /> Buka Link Drive</a>
                                     </div>
@@ -1609,7 +1652,82 @@ export default function App() {
                     )}
 
                     {/* Archive View - Completed Projects */}
+                    {view === 'archive' && (
+                        <div className="pt-20 animate-[fadeIn_0.3s]">
+                            <div className="flex justify-between items-end mb-8">
+                                <div>
+                                    <button onClick={() => {
+                                        if ((userData?.role === 'supervisor' || userData?.role === 'super_admin') && !activeTeamId) {
+                                            setView('team-list');
+                                        } else {
+                                            setView('dashboard');
+                                        }
+                                    }} className="mb-2 text-xs font-bold text-slate-400 hover:text-indigo-600 flex items-center gap-1"><ChevronLeft size={14} /> Kembali</button>
+                                    <h2 className="text-3xl font-black text-slate-800">Arsip Project (Fixed)</h2>
+                                    <p className="text-sm text-slate-500 mt-1">Project yang sudah selesai</p>
+                                </div>
+                            </div>
 
+                            <div className="mb-10">
+                                <PerformanceChart data={getWeeklyAnalytics((userData?.role === 'supervisor' || userData?.role === 'super_admin') ? activeTeamId || 'all' : userData?.teamId)} title="Statistik Arsip Mingguan" />
+                            </div>
+
+                            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
+                                {projects
+                                    .filter(p => {
+                                        // Show completed projects only
+                                        if (p.status !== 'Completed') return false;
+
+                                        // Team-based filter
+                                        if (userData?.role === 'supervisor' || userData?.role === 'super_admin') {
+                                            return activeTeamId ? (String(p.teamId) === String(activeTeamId)) : true;
+                                        } else {
+                                            return String(p.teamId) === String(userData?.teamId);
+                                        }
+                                    })
+                                    .map(p => (
+                                        <div key={p.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-lg transition-all group">
+                                            <div className="flex justify-between mb-4">
+                                                <span className="text-[10px] bg-emerald-100 text-emerald-600 px-3 py-1 rounded-full font-bold uppercase flex items-center gap-1">
+                                                    <CheckCircle2 size={10} /> Completed
+                                                </span>
+                                                <span className="text-[10px] text-slate-400 font-bold">
+                                                    {formatFirestoreDate(p.createdAt)}
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <span className="text-[10px] bg-slate-100 px-2 py-1 rounded font-bold text-slate-600">
+                                                    {TEAMS.find(t => t.id === p.teamId)?.name}
+                                                </span>
+                                            </div>
+                                            <h3 className="font-bold text-slate-800 text-lg mb-3 leading-tight">{p.title}</h3>
+                                            <div className="w-full bg-emerald-100 h-2 rounded-full overflow-hidden mb-4">
+                                                <div className="h-full bg-emerald-500" style={{ width: '100%' }}></div>
+                                            </div>
+                                            {p.finalLink && (
+                                                <a href={p.finalLink} target="_blank" className="flex items-center justify-center gap-2 w-full py-3 bg-emerald-50 text-emerald-600 rounded-xl text-sm font-bold border border-emerald-100 hover:bg-emerald-100 transition-colors">
+                                                    <LinkIcon size={16} /> Buka Hasil Final
+                                                </a>
+                                            )}
+                                        </div>
+                                    ))}
+                                {projects.filter(p => {
+                                    if (p.status !== 'Completed') return false;
+                                    if (p.status !== 'Completed') return false;
+                                    if (userData?.role === 'supervisor' || userData?.role === 'super_admin') {
+                                        return activeTeamId ? (String(p.teamId) === String(activeTeamId)) : true;
+                                    } else {
+                                        return String(p.teamId) === String(userData?.teamId);
+                                    }
+                                }).length === 0 && (
+                                        <div className="col-span-full text-center py-20">
+                                            <Archive size={48} className="mx-auto text-slate-300 mb-4" />
+                                            <p className="text-slate-400 font-medium">Belum ada project yang selesai</p>
+                                        </div>
+                                    )}
+                            </div>
+                        </div>
+                    )}
 
                 </div>
             </div>
@@ -1657,16 +1775,51 @@ export default function App() {
             <Modal isOpen={isAddAssetOpen} onClose={() => setIsAddAssetOpen(false)} title="Upload Aset Baru">
                 <div className="space-y-4">
                     <div><label className="block text-xs font-bold text-slate-500 mb-1">Nama File</label><input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:bg-white focus:border-indigo-500 transition-all font-medium" placeholder="Contoh: Logo.png" value={newAssetForm.title} onChange={e => setNewAssetForm({ ...newAssetForm, title: e.target.value })} /></div>
+                    <div><label className="block text-xs font-bold text-slate-500 mb-1">Link URL</label><input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:bg-white focus:border-indigo-500 transition-all font-medium" placeholder="https://..." value={newAssetForm.link || ''} onChange={e => setNewAssetForm({ ...newAssetForm, link: e.target.value })} /></div>
                     <div className="flex gap-3">
                         <div className="flex-1"><label className="block text-xs font-bold text-slate-500 mb-1">Tipe File</label><select className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none flex-1 font-medium cursor-pointer" value={newAssetForm.type} onChange={e => setNewAssetForm({ ...newAssetForm, type: e.target.value })}><option value="folder">Folder</option><option value="audio">Audio</option><option value="video">Video</option></select></div>
                         <div className="w-1/3"><label className="block text-xs font-bold text-slate-500 mb-1">Ukuran (MB)</label><input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none font-medium" placeholder="Size" value={newAssetForm.size} onChange={e => setNewAssetForm({ ...newAssetForm, size: e.target.value })} /></div>
                     </div>
-                    <div><label className="block text-xs font-bold text-slate-500 mb-1">Link Download (GDrive)</label><input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:bg-white focus:border-indigo-500 transition-all font-medium" placeholder="https://..." value={newAssetForm.link || ''} onChange={e => setNewAssetForm({ ...newAssetForm, link: e.target.value })} /></div>
                     <button onClick={handleAddAsset} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg mt-2 hover:bg-indigo-700 transition-all">Simpan Aset</button>
                 </div>
             </Modal>
 
-            {/* --- EDIT PROFILE MODAL --- */}
+            {/* --- MANAGE CAROUSEL MODAL (NEW) --- */}
+            <Modal isOpen={isEditWeeklyOpen} onClose={() => setIsEditWeeklyOpen(false)} title="Atur Highlight Mingguan">
+                <div className="space-y-6">
+                    {/* LIST SLIDES */}
+                    <div className="space-y-3 max-h-60 overflow-y-auto custom-scrollbar bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                        {weeklyHighlights.length === 0 && <p className="text-center text-xs text-slate-400 py-4">Belum ada slide.</p>}
+                        {weeklyHighlights.map((slide, idx) => (
+                            <div key={slide.id || idx} className="flex items-center gap-3 bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
+                                <img src={slide.image} className="w-12 h-12 rounded-lg object-cover bg-slate-200" alt="Thumb" />
+                                <div className="flex-1 min-w-0">
+                                    <p className="font-bold text-xs text-slate-700 truncate">{slide.title}</p>
+                                    <p className="text-[10px] text-slate-400">Slide #{idx + 1}</p>
+                                </div>
+                                <button onClick={() => handleDeleteSlide(slide.id)} className="p-2 text-red-400 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors"><Trash2 size={16} /></button>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* ADD FORM */}
+                    <div className="pt-4 border-t border-slate-100">
+                        <h4 className="font-bold text-slate-700 text-sm mb-3">Tambah Slide Baru</h4>
+                        <div className="space-y-3">
+                            <div><label className="block text-xs font-bold text-slate-500 mb-1">Judul Highlight</label><input type="text" className="w-full p-3 bg-slate-50 rounded-xl text-xs border border-slate-200 outline-none focus:border-indigo-500" value={weeklyForm.title} onChange={e => setWeeklyForm({ ...weeklyForm, title: e.target.value })} placeholder="Judul..." /></div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 mb-1">URL Gambar (Unsplash/Link)</label>
+                                <div className="flex gap-2">
+                                    <input type="text" className="flex-1 p-3 bg-slate-50 rounded-xl text-xs border border-slate-200 outline-none focus:border-indigo-500" value={weeklyForm.image} onChange={e => setWeeklyForm({ ...weeklyForm, image: e.target.value })} placeholder="https://..." />
+                                    {weeklyForm.image && <img src={weeklyForm.image} className="w-10 h-10 rounded-lg object-cover border border-slate-200" />}
+                                </div>
+                            </div>
+                            <button onClick={handleAddSlide} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold transition-all shadow-lg flex items-center justify-center gap-2 text-sm hover:scale-105 transform"><Plus size={16} /> Tambah ke Carousel</button>
+                        </div>
+                    </div>
+                </div>
+            </Modal>
+
             <Modal isOpen={isEditProfileOpen} onClose={() => setIsEditProfileOpen(false)} title="Edit Profil">
                 <div className="space-y-4">
                     <div>
@@ -1685,37 +1838,72 @@ export default function App() {
                     {/* FIX: Real Firebase Storage Upload */}
                     <div>
                         <label className="block text-xs font-bold text-slate-500 mb-1">Upload Foto Profil</label>
-                        <div className="flex flex-col items-center justify-center gap-4 mb-4">
-                            <div className="relative group">
-                                <img
-                                    src={editProfileData.photoURL || "https://ui-avatars.com/api/?name=User&background=random"}
-                                    className="w-24 h-24 rounded-full border-4 border-slate-100 shadow-md object-cover"
-                                    alt="Profile Preview"
-                                />
-                                <button
-                                    onClick={() => document.getElementById('photo-upload').click()}
-                                    className="absolute bottom-0 right-0 p-2 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 transition-transform hover:scale-110"
-                                >
-                                    <Camera size={16} />
-                                </button>
-                            </div>
-                            {editProfileData.photoURL !== userData?.photoURL && (
-                                <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full animate-bounce">
-                                    Foto baru siap disimpan!
-                                </span>
-                            )}
-                        </div>
                         <input
                             type="file"
                             id="photo-upload"
                             accept="image/*"
                             className="hidden"
-                            onChange={e => handlePhotoUpload(e.target.files[0])}
+                            onChange={(e) => {
+                                const file = e.target.files[0];
+                                if (!file) return;
+
+                                // Base64 Storage Strategy (No Firebase Storage needed)
+                                const reader = new FileReader();
+                                reader.onload = (event) => {
+                                    const img = new Image();
+                                    img.onload = () => {
+                                        const canvas = document.createElement('canvas');
+                                        const ctx = canvas.getContext('2d');
+
+                                        // Resize to 200x200 for profile optimization
+                                        const maxWidth = 200;
+                                        const scale = maxWidth / img.width;
+                                        canvas.width = maxWidth;
+                                        canvas.height = img.height * scale;
+
+                                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+                                        // Compress to JPEG 0.7 quality
+                                        const base64String = canvas.toDataURL('image/jpeg', 0.7);
+
+                                        setEditProfileData({ ...editProfileData, photoURL: base64String });
+                                        showToast("Foto siap disimpan!");
+                                    };
+                                    img.src = event.target.result;
+                                };
+                                reader.readAsDataURL(file);
+                            }}
                         />
+                        <div className="flex items-center gap-4 mb-3">
+                            <div className="w-16 h-16 rounded-full bg-slate-100 border border-slate-200 overflow-hidden shrink-0">
+                                {editProfileData.photoURL ? (
+                                    <img src={editProfileData.photoURL} className="w-full h-full object-cover" alt="Preview" />
+                                ) : (
+                                    <div className="w-full h-full flex items-center justify-center text-slate-300"><User size={24} /></div>
+                                )}
+                            </div>
+                            <div className="flex-1">
+                                <button
+                                    type="button"
+                                    onClick={() => document.getElementById('photo-upload').click()}
+                                    className="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-200 transition-colors flex items-center gap-2"
+                                >
+                                    <Camera size={14} /> Pilih Foto Baru
+                                </button>
+                                <p className="text-[10px] text-slate-400 mt-1 ml-1">JPG, PNG max 2MB</p>
+                            </div>
+                        </div>
+
+                        {editProfileData.photoURL !== userData?.photoURL && (
+                            <div className="mt-2 flex items-center justify-center gap-2 text-emerald-500">
+                                <img src={editProfileData.photoURL} className="w-10 h-10 rounded-full border-2 border-emerald-200" />
+                                <span className="text-xs font-bold">Foto baru siap disimpan!</span>
+                            </div>
+                        )}
                     </div>
                     <button onClick={handleUpdateProfile} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold transition-all shadow-lg flex items-center justify-center gap-2"><Save size={18} /> Simpan Profil</button>
                 </div>
-            </Modal>
+            </Modal >
 
             {/* --- MODAL APPROVAL USER --- */}
             {/* Ensure this modal is rendered at root level of return */}
@@ -1733,28 +1921,35 @@ export default function App() {
                                 <button type="button" onClick={() => setApprovalForm({ ...approvalForm, role: 'tim_khusus' })} className={`p-3 rounded-xl border text-left text-sm font-bold ${approvalForm.role === 'tim_khusus' ? 'bg-amber-50 border-amber-500 text-amber-700' : 'text-slate-600'}`}>Tim Khusus</button>
                                 <button type="button" onClick={() => setApprovalForm({ ...approvalForm, role: 'supervisor' })} className={`p-3 rounded-xl border text-left text-sm font-bold ${approvalForm.role === 'supervisor' ? 'bg-purple-50 border-purple-500 text-purple-700' : 'text-slate-600'}`}>Supervisor</button>
                             </div>
-                            {approvalForm.role === 'creator' && (
-                                <div className="mt-4 animate-[fadeIn_0.3s]">
-                                    <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">Pilih Tim</label>
+                        </div>
+
+
+                        {/* Team Selection for Creator */}
+                        {
+                            approvalForm.role === 'creator' && (
+                                <div className="space-y-2 animate-[fadeIn_0.3s]">
+                                    <label className="text-xs font-bold text-slate-400 uppercase">Pilih Penempatan Tim</label>
                                     <div className="grid grid-cols-2 gap-2">
-                                        {TEAMS.filter(t => !t.isSpecial).map(team => (
+                                        {TEAMS.filter(t => !t.isSpecial).map(t => (
                                             <button
-                                                key={team.id}
+                                                key={t.id}
                                                 type="button"
-                                                onClick={() => setApprovalForm({ ...approvalForm, teamId: team.id })}
-                                                className={`p-3 rounded-xl border text-left text-xs font-bold ${approvalForm.teamId === team.id ? 'bg-indigo-50 border-indigo-500 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'}`}
+                                                onClick={() => setApprovalForm({ ...approvalForm, teamId: t.id })}
+                                                className={`p-3 rounded-xl border text-left text-sm font-bold transition-all ${approvalForm.teamId === t.id ? 'bg-indigo-50 border-indigo-500 text-indigo-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
                                             >
-                                                {team.name}
+                                                {t.name}
                                             </button>
                                         ))}
                                     </div>
                                 </div>
-                            )}
-                        </div>
-                        <button type="button" onClick={handleConfirmApproval} className="w-full py-4 bg-emerald-500 text-white rounded-2xl font-bold shadow-lg">Setujui Akses</button>
-                    </div>
-                ) : (<div className="text-center py-10"><Loader2 className="animate-spin mx-auto text-slate-300" /></div>)}
-            </Modal>
+                            )
+                        }
+
+                        <button type="button" onClick={handleConfirmApproval} className="w-full py-4 bg-emerald-500 text-white rounded-2xl font-bold shadow-lg hover:bg-emerald-600 transition-all">Setujui Akses</button>
+                    </div >
+                ) : (<div className="text-center py-10"><Loader2 className="animate-spin mx-auto text-slate-300" /></div>)
+                }
+            </Modal >
 
             {/* Other modals (Edit Weekly, News, Approval, etc.) remain standard as previous */}
             {/* ... (Keeping previous modal implementations for brevity) ... */}
@@ -1771,12 +1966,7 @@ export default function App() {
                     <div><label className="block text-xs font-bold text-slate-500 mb-1">Judul Berita</label><input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:border-indigo-500" value={newsForm.title} onChange={e => setNewsForm({ ...newsForm, title: e.target.value })} /></div>
                     <div><label className="block text-xs font-bold text-slate-500 mb-1">Ringkasan (Depan)</label><input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:border-indigo-500" value={newsForm.summary} onChange={e => setNewsForm({ ...newsForm, summary: e.target.value })} /></div>
                     <div><label className="block text-xs font-bold text-slate-500 mb-1">Konten Lengkap</label><textarea className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:border-indigo-500 h-40 resize-none" value={newsForm.content} onChange={e => setNewsForm({ ...newsForm, content: e.target.value })} /></div>
-                    <div className="flex gap-2">
-                        {newsForm.id && (
-                            <button onClick={handleDeleteNews} className="px-4 py-4 bg-red-100 text-red-600 rounded-2xl font-bold hover:bg-red-200 transition-colors" title="Hapus Berita"><Trash2 size={18} /></button>
-                        )}
-                        <button onClick={handleSaveNews} className="flex-1 py-4 bg-indigo-600 text-white rounded-2xl font-bold transition-all shadow-lg flex items-center justify-center gap-2"><Save size={18} /> {newsForm.id ? 'Simpan Perubahan' : 'Terbitkan Berita'}</button>
-                    </div>
+                    <button onClick={handleSaveNews} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold transition-all shadow-lg flex items-center justify-center gap-2"><Save size={18} /> Simpan Berita</button>
                 </div>
             </Modal>
 
