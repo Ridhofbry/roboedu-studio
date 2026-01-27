@@ -286,8 +286,7 @@ const ALL_TASK_IDS = WORKFLOW_STEPS.flatMap(s => s.tasks.map(t => t.id));
 /* ========================================================================
    2.5. CUSTOM SEARCHABLE CITY SELECT COMPONENT
    ======================================================================== */
-const CitySelect = ({ value, onChange, label, disabled }) => {
-    const isDisabled = disabled || false;
+const CitySelect = ({ value, onChange, label, disabled = false }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [search, setSearch] = useState("");
     const dropdownRef = React.useRef(null);
@@ -317,8 +316,8 @@ const CitySelect = ({ value, onChange, label, disabled }) => {
         <div className="relative mb-4" ref={dropdownRef}>
             <label className="block text-left text-xs font-bold text-slate-400 mb-1 ml-1">{label}</label>
             <div
-                onClick={() => !isDisabled && setIsOpen(!isOpen)}
-                className={`w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none flex items-center justify-between cursor-pointer focus:ring-2 focus:ring-indigo-200 transition-all ${isDisabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white hover:border-indigo-300'}`}
+                onClick={() => !disabled && setIsOpen(!isOpen)}
+                className={`w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none flex items-center justify-between cursor-pointer focus:ring-2 focus:ring-indigo-200 transition-all ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white hover:border-indigo-300'}`}
             >
                 <span className={value ? "text-slate-800 font-medium" : "text-slate-400"}>
                     {value || "Pilih Kota / Kabupaten..."}
@@ -1209,7 +1208,7 @@ export default function App() {
                     teamId === 'team_khusus' ? 'Tim Khusus' : 'Unknown';
 
             // Get team members
-            const teamMembers = users.filter(u => u.teamId === teamId);
+            const teamMembers = usersList.filter(u => u.teamId === teamId);
 
             // Filter projects by team and completion date
             const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
@@ -1996,34 +1995,11 @@ export default function App() {
                                 </h2>
                                 <div className="flex gap-2">
                                     {(userData?.role === 'supervisor' || userData?.role === 'super_admin') && activeTeamId && (
-                                        <>
-                                            <button onClick={() => {
-                                                const tm = TEAMS.find(t => t.id === activeTeamId);
-                                                setNewProjectForm({ ...newProjectForm, teamId: tm.id, isBigProject: tm.isSpecial });
-                                                setIsAddProjectOpen(true);
-                                            }} className="bg-slate-900 text-white px-4 py-2 rounded-full font-bold text-xs shadow-lg flex items-center gap-2"><Plus size={14} /> Project Baru</button>
-                                            <button
-                                                onClick={() => {
-                                                    setReportTeamId(activeTeamId);
-                                                    setIsReportModalOpen(true);
-                                                }}
-                                                className="bg-indigo-600 text-white px-4 py-2 rounded-full font-bold text-xs shadow-lg flex items-center gap-2 hover:bg-indigo-700"
-                                            >
-                                                <Download size={14} /> Laporan Bulanan
-                                            </button>
-                                        </>
-                                    )}
-                                    {/* Creator can also download their own team's report */}
-                                    {(userData?.role === 'creator' || userData?.role === 'tim_khusus') && (
-                                        <button
-                                            onClick={() => {
-                                                setReportTeamId(userData.teamId);
-                                                setIsReportModalOpen(true);
-                                            }}
-                                            className="bg-indigo-600 text-white px-4 py-2 rounded-full font-bold text-xs shadow-lg flex items-center gap-2 hover:bg-indigo-700"
-                                        >
-                                            <Download size={14} /> Laporan Bulanan
-                                        </button>
+                                        <button onClick={() => {
+                                            const tm = TEAMS.find(t => t.id === activeTeamId);
+                                            setNewProjectForm({ ...newProjectForm, teamId: tm.id, isBigProject: tm.isSpecial });
+                                            setIsAddProjectOpen(true);
+                                        }} className="bg-slate-900 text-white px-4 py-2 rounded-full font-bold text-xs shadow-lg flex items-center gap-2"><Plus size={14} /> Project Baru</button>
                                     )}
                                     {/* CREATOR ARCHIVE BUTTON IN DASHBOARD */}
                                     {(userData?.role === 'creator' || userData?.role === 'tim_khusus') && (
