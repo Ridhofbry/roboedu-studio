@@ -317,7 +317,7 @@ const CitySelect = ({ value, onChange, label, disabled }) => {
         <div className="relative mb-4" ref={dropdownRef}>
             <label className="block text-left text-xs font-bold text-slate-400 mb-1 ml-1">{label}</label>
             <div
-                onClick={() => !isDisabled && setIsOpen(!isOpen)}
+                onClick={() => { if (!isDisabled) setIsOpen(!isOpen); }}
                 className={`w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none flex items-center justify-between cursor-pointer focus:ring-2 focus:ring-indigo-200 transition-all ${isDisabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white hover:border-indigo-300'}`}
             >
                 <span className={value ? "text-slate-800 font-medium" : "text-slate-400"}>
