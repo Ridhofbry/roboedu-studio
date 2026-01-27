@@ -396,7 +396,9 @@ const sendOneSignalNotification = async (targetRole, message, teamName) => {
         if (response.ok) {
             console.log('✅ Notification sent:', message);
         } else {
-            console.error('❌ Notification failed:', data);
+            // Stringify error object for readable console logs
+            console.error('❌ Notification failed:', JSON.stringify(data, null, 2));
+            showToast(`Gagal kirim notif: ${data.error || 'Server Error'}`, 'error');
         }
     } catch (err) {
         console.error('❌ Notification error:', err);
@@ -832,7 +834,10 @@ export default function App() {
                 // SDK v16: Use User.addTag() instead of sendTag()
                 if (userData.role) await OneSignal.User.addTag('role', userData.role);
                 if (userData.teamId) await OneSignal.User.addTag('teamId', userData.teamId);
-                console.log('✅ OneSignal tagged:', userData.role, userData.teamId);
+                console.log('✅ OneSignal tagged:',
+                    userData.role || '(no-role)',
+                    userData.teamId || '(no-team)'
+                );
             } catch (error) {
                 console.error('❌ Failed to tag user:', error);
             }
