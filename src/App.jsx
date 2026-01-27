@@ -1953,13 +1953,7 @@ export default function App() {
 
             {/* Other modals (Edit Weekly, News, Approval, etc.) remain standard as previous */}
             {/* ... (Keeping previous modal implementations for brevity) ... */}
-            <Modal isOpen={isEditWeeklyOpen} onClose={() => setIsEditWeeklyOpen(false)} title="Edit Weekly Highlight">
-                <div className="space-y-4">
-                    <div><label className="block text-xs font-bold text-slate-500 mb-1">Judul Highlight</label><input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:border-indigo-500 transition-colors" value={weeklyForm.title} onChange={e => setWeeklyForm({ ...weeklyForm, title: e.target.value })} /></div>
-                    <div><label className="block text-xs font-bold text-slate-500 mb-1">URL Gambar (Unsplash)</label><input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:border-indigo-500 transition-colors" value={weeklyForm.image} onChange={e => setWeeklyForm({ ...weeklyForm, image: e.target.value })} /></div>
-                    <button onClick={handleSaveWeekly} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold transition-all shadow-lg flex items-center justify-center gap-2"><Save size={18} /> Simpan Perubahan</button>
-                </div>
-            </Modal>
+
 
             <Modal isOpen={isEditNewsOpen} onClose={() => setIsEditNewsOpen(false)} title="Edit Berita">
                 <div className="space-y-4">
