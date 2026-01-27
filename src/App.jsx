@@ -375,39 +375,28 @@ const CitySelect = ({ value, onChange, label, disabled = false }) => {
    ======================================================================== */
 
 const sendOneSignalNotification = async (targetRole, message, teamName) => {
-    if (!ONESIGNAL_APP_ID || !ONESIGNAL_API_KEY) {
-        console.warn('OneSignal not configured');
-        return;
-    }
-
-    const heading = targetRole === 'supervisor'
-        ? `📋 Laporan: ${teamName}`
-        : `🔔 Update: ${teamName}`;
-
-    const options = {
-        method: 'POST',
-        headers: {
-            'accept': 'application/json',
-            'content-type': 'application/json',
-            'Authorization': `Basic ${ONESIGNAL_API_KEY}`
-        },
-        body: JSON.stringify({
-            app_id: ONESIGNAL_APP_ID,
-            headings: { en: heading },
-            contents: { en: message },
-            // Filter by role tag
-            filters: [
-                { field: 'tag', key: 'role', relation: '=', value: targetRole }
-            ]
-        })
-    };
 
     try {
-        const response = await fetch('https://onesignal.com/api/v1/notifications', options);
+        // Call serverless function instead of OneSignal API directly
+        // This avoids CORS issues and keeps REST API Key secure
+        const response = await fetch('/api/send-notification', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                targetRole,
+                message,
+                teamName
+            })
+        });
+
+        const data = await response.json();
+
         if (response.ok) {
             console.log('✅ Notification sent:', message);
         } else {
-            console.error('❌ Notification failed:', await response.text());
+            console.error('❌ Notification failed:', data);
         }
     } catch (err) {
         console.error('❌ Notification error:', err);
@@ -809,34 +798,45 @@ export default function App() {
         }
     }, []);
 
-    // OneSignal Initialization
+    // OneSignal Initialization (SDK v16)
     useEffect(() => {
-        if (!ONESIGNAL_APP_ID) return;
+        if (!ONESIGNAL_APP_ID) {
+            console.warn('OneSignal App ID not configured');
+            return;
+        }
 
-        window.OneSignal = window.OneSignal || [];
-        window.OneSignal.push(function () {
-            window.OneSignal.init({
+        window.OneSignalDeferred = window.OneSignalDeferred || [];
+        OneSignalDeferred.push(async function (OneSignal) {
+            await OneSignal.init({
                 appId: ONESIGNAL_APP_ID,
-                notifyButton: {
-                    enable: false, // Disable default button
-                },
-                allowLocalhostAsSecureOrigin: true, // For local testing
+                allowLocalhostAsSecureOrigin: true,
             });
 
-            // Auto-prompt for permission on first visit
-            window.OneSignal.showSlidedownPrompt();
+            // Request notification permission
+            try {
+                await OneSignal.Notifications.requestPermission();
+                console.log('✅ OneSignal initialized successfully');
+            } catch (error) {
+                console.log('⚠️ Notification permission denied or already handled:', error);
+            }
         });
     }, []);
 
-    // Tag user with role after login
+    // Tag user with role after login (SDK v16)
     useEffect(() => {
-        if (userData && window.OneSignal) {
-            window.OneSignal.push(function () {
-                window.OneSignal.sendTag('role', userData.role);
-                window.OneSignal.sendTag('teamId', userData.teamId);
+        if (!userData || !ONESIGNAL_APP_ID) return;
+
+        window.OneSignalDeferred = window.OneSignalDeferred || [];
+        OneSignalDeferred.push(async function (OneSignal) {
+            try {
+                // SDK v16: Use User.addTag() instead of sendTag()
+                await OneSignal.User.addTag('role', userData.role);
+                await OneSignal.User.addTag('teamId', userData.teamId);
                 console.log('✅ OneSignal tagged:', userData.role, userData.teamId);
-            });
-        }
+            } catch (error) {
+                console.error('❌ Failed to tag user:', error);
+            }
+        });
     }, [userData]);
 
     const handleEmailVerificationLink = async (code) => {
