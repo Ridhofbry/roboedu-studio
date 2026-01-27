@@ -97,12 +97,155 @@ const TEAMS = [
 ];
 
 const INDONESIAN_CITIES = [
-    "Jakarta Pusat", "Jakarta Selatan", "Jakarta Barat", "Jakarta Timur", "Jakarta Utara",
-    "Surabaya", "Bandung", "Medan", "Semarang", "Makassar", "Palembang", "Tangerang",
-    "Depok", "Bekasi", "Bogor", "Malang", "Yogyakarta", "Surakarta", "Denpasar",
-    "Batam", "Pekanbaru", "Bandar Lampung", "Padang", "Samarinda", "Balikpapan",
-    "Banjarmasin", "Pontianak", "Manado", "Mataram", "Jayapura"
-].sort();
+    {
+        province: "Nanggroe Aceh Darussalam",
+        cities: ["Banda Aceh", "Sabang", "Lhokseumawe", "Langsa", "Subulussalam", "Aceh Barat", "Aceh Besar", "Aceh Jaya", "Aceh Selatan", "Aceh Singkil", "Aceh Tamiang", "Aceh Tengah", "Aceh Tenggara", "Aceh Timur", "Aceh Utara", "Bener Meriah", "Bireuen", "Gayo Lues", "Nagan Raya", "Pidie", "Pidie Jaya", "Simeulue"]
+    },
+    {
+        province: "Sumatera Utara",
+        cities: ["Medan", "Binjai", "Pematangsiantar", "Tebing Tinggi", "Tanjungbalai", "Sibolga", "Padangsidimpuan", "Gunungsitoli", "Asahan", "Batubara", "Dairi", "Deli Serdang", "Humbang Hasundutan", "Karo", "Labuhanbatu", "Langkat", "Mandailing Natal", "Nias", "Padang Lawas", "Pakpak Bharat", "Samosir", "Serdang Bedagai", "Simalungun", "Tapanuli Selatan", "Tapanuli Tengah", "Tapanuli Utara", "Toba"]
+    },
+    {
+        province: "Sumatera Barat",
+        cities: ["Padang", "Bukittinggi", "Payakumbuh", "Pariaman", "Padang Panjang", "Sawahlunto", "Solok", "Agam", "Dharmasraya", "Kepulauan Mentawai", "Lima Puluh Kota", "Padang Pariaman", "Pasaman", "Pesisir Selatan", "Sijunjung", "Solok Selatan", "Tanah Datar"]
+    },
+    {
+        province: "Riau",
+        cities: ["Pekanbaru", "Dumai", "Bengkalis", "Indragiri Hilir", "Indragiri Hulu", "Kampar", "Kepulauan Meranti", "Kuantan Singingi", "Pelalawan", "Rokan Hilir", "Rokan Hulu", "Siak"]
+    },
+    {
+        province: "Kepulauan Riau",
+        cities: ["Tanjungpinang", "Batam", "Bintan", "Karimun", "Kepulauan Anambas", "Lingga", "Natuna"]
+    },
+    {
+        province: "Jambi",
+        cities: ["Jambi", "Sungai Penuh", "Batanghari", "Bungo", "Kerinci", "Merangin", "Muaro Jambi", "Sarolangun", "Tanjung Jabung Barat", "Tanjung Jabung Timur", "Tebo"]
+    },
+    {
+        province: "Sumatera Selatan",
+        cities: ["Palembang", "Lubuklinggau", "Pagar Alam", "Prabumulih", "Banyuasin", "Empat Lawang", "Lahat", "Muara Enim", "Musi Banyuasin", "Musi Rawas", "Ogan Ilir", "Ogan Komering Ilir", "Ogan Komering Ulu"]
+    },
+    {
+        province: "Bengkulu",
+        cities: ["Bengkulu", "Bengkulu Selatan", "Bengkulu Tengah", "Bengkulu Utara", "Kaur", "Kepahiang", "Lebong", "Mukomuko", "Rejang Lebong", "Seluma"]
+    },
+    {
+        province: "Lampung",
+        cities: ["Bandar Lampung", "Metro", "Lampung Barat", "Lampung Selatan", "Lampung Tengah", "Lampung Timur", "Lampung Utara", "Mesuji", "Pesawaran", "Pesisir Barat", "Pringsewu", "Tanggamus", "Tulang Bawang", "Way Kanan"]
+    },
+    {
+        province: "DKI Jakarta",
+        cities: ["Jakarta Pusat", "Jakarta Selatan", "Jakarta Barat", "Jakarta Timur", "Jakarta Utara", "Kepulauan Seribu"]
+    },
+    {
+        province: "Jawa Barat",
+        cities: ["Bandung", "Bekasi", "Bogor", "Depok", "Cimahi", "Tasikmalaya", "Banjar", "Cirebon", "Sukabumi", "Ciamis", "Cianjur", "Garut", "Indramayu", "Karawang", "Kuningan", "Majalengka", "Pangandaran", "Purwakarta", "Subang", "Sumedang"]
+    },
+    {
+        province: "Banten",
+        cities: ["Serang", "Cilegon", "Tangerang", "Tangerang Selatan", "Lebak", "Pandeglang"]
+    },
+    {
+        province: "Jawa Tengah",
+        cities: ["Semarang", "Surakarta", "Magelang", "Pekalongan", "Salatiga", "Tegal", "Banjarnegara", "Banyumas", "Batang", "Blora", "Boyolali", "Brebes", "Cilacap", "Demak", "Grobogan", "Jepara", "Karanganyar", "Kebumen", "Kendal", "Klaten", "Kudus", "Pati", "Pemalang", "Purbalingga", "Purworejo", "Rembang", "Sragen", "Sukoharjo", "Temanggung", "Wonogiri", "Wonosobo"]
+    },
+    {
+        province: "DI Yogyakarta",
+        cities: ["Yogyakarta", "Bantul", "Gunung Kidul", "Kulon Progo", "Sleman"]
+    },
+    {
+        province: "Jawa Timur",
+        cities: ["Surabaya", "Malang", "Madiun", "Kediri", "Mojokerto", "Batu", "Pasuruan", "Probolinggo", "Blitar", "Banyuwangi", "Bojonegoro", "Bondowoso", "Gresik", "Jember", "Jombang", "Lamongan", "Lumajang", "Magetan", "Nganjuk", "Ngawi", "Pacitan", "Pamekasan", "Ponorogo", "Sampang", "Sidoarjo", "Situbondo", "Sumenep", "Trenggalek", "Tuban", "Tulungagung"]
+    },
+    {
+        province: "Bali",
+        cities: ["Denpasar", "Badung", "Bangli", "Buleleng", "Gianyar", "Jembrana", "Karangasem", "Klungkung", "Tabanan"]
+    },
+    {
+        province: "Nusa Tenggara Barat",
+        cities: ["Mataram", "Bima", "Dompu", "Lombok Barat", "Lombok Tengah", "Lombok Timur", "Lombok Utara", "Sumbawa", "Sumbawa Barat"]
+    },
+    {
+        province: "Nusa Tenggara Timur",
+        cities: ["Kupang", "Alor", "Belu", "Ende", "Flores Timur", "Lembata", "Malaka", "Manggarai", "Nagekeo", "Ngada", "Rote Ndao", "Sabu Raijua", "Sikka", "Sumba Barat", "Sumba Timur", "Timor Tengah Selatan", "Timor Tengah Utara"]
+    },
+    {
+        province: "Kalimantan Barat",
+        cities: ["Pontianak", "Singkawang", "Bengkayang", "Kapuas Hulu", "Kayong Utara", "Ketapang", "Kubu Raya", "Landak", "Melawi", "Mempawah", "Sambas", "Sanggau", "Sekadau", "Sintang"]
+    },
+    {
+        province: "Kalimantan Tengah",
+        cities: ["Palangka Raya", "Barito Selatan", "Barito Timur", "Barito Utara", "Gunung Mas", "Kapuas", "Katingan", "Kotawaringin Barat", "Kotawaringin Timur", "Lamandau", "Murung Raya", "Pulang Pisau", "Seruyan", "Sukamara"]
+    },
+    {
+        province: "Kalimantan Selatan",
+        cities: ["Banjarmasin", "Banjarbaru", "Balangan", "Banjar", "Barito Kuala", "Hulu Sungai Selatan", "Hulu Sungai Tengah", "Hulu Sungai Utara", "Kotabaru", "Tabalong", "Tanah Bumbu", "Tanah Laut", "Tapin"]
+    },
+    {
+        province: "Kalimantan Timur",
+        cities: ["Samarinda", "Balikpapan", "Bontang", "Berau", "Kutai Barat", "Kutai Kartanegara", "Kutai Timur", "Mahakam Ulu", "Paser", "Penajam Paser Utara"]
+    },
+    {
+        province: "Kalimantan Utara",
+        cities: ["Tarakan", "Bulungan", "Malinau", "Nunukan", "Tana Tidung"]
+    },
+    {
+        province: "Sulawesi Utara",
+        cities: ["Manado", "Bitung", "Tomohon", "Kotamobagu", "Bolaang Mongondow", "Kepulauan Sangihe", "Kepulauan Siau Tagulandang Biaro", "Kepulauan Talaud", "Minahasa", "Minahasa Selatan", "Minahasa Tenggara", "Minahasa Utara"]
+    },
+    {
+        province: "Gorontalo",
+        cities: ["Gorontalo", "Boalemo", "Bone Bolango", "Gorontalo Utara", "Pohuwato"]
+    },
+    {
+        province: "Sulawesi Tengah",
+        cities: ["Palu", "Banggai", "Banggai Kepulauan", "Banggai Laut", "Buol", "Donggala", "Morowali", "Morowali Utara", "Parigi Moutong", "Poso", "Sigi", "Tojo Una-Una", "Tolitoli"]
+    },
+    {
+        province: "Sulawesi Barat",
+        cities: ["Mamuju", "Majene", "Mamasa", "Mamuju Tengah", "Pasangkayu", "Polewali Mandar"]
+    },
+    {
+        province: "Sulawesi Selatan",
+        cities: ["Makassar", "Parepare", "Palopo", "Bantaeng", "Barru", "Bone", "Bulukumba", "Enrekang", "Gowa", "Jeneponto", "Kepulauan Selayar", "Luwu", "Luwu Timur", "Luwu Utara", "Maros", "Pangkajene dan Kepulauan", "Pinrang", "Sidenreng Rappang", "Sinjai", "Soppeng", "Takalar", "Tana Toraja", "Toraja Utara", "Wajo"]
+    },
+    {
+        province: "Sulawesi Tenggara",
+        cities: ["Kendari", "Baubau", "Bombana", "Buton", "Buton Selatan", "Buton Tengah", "Buton Utara", "Kolaka", "Kolaka Timur", "Kolaka Utara", "Konawe", "Konawe Kepulauan", "Konawe Selatan", "Konawe Utara", "Muna", "Muna Barat", "Wakatobi"]
+    },
+    {
+        province: "Maluku",
+        cities: ["Ambon", "Tual", "Buru", "Buru Selatan", "Kepulauan Aru", "Maluku Barat Daya", "Maluku Tengah", "Maluku Tenggara", "Maluku Tenggara Barat", "Seram Bagian Barat", "Seram Bagian Timur"]
+    },
+    {
+        province: "Maluku Utara",
+        cities: ["Ternate", "Tidore Kepulauan", "Halmahera Barat", "Halmahera Tengah", "Halmahera Timur", "Halmahera Selatan", "Halmahera Utara", "Kepulauan Sula", "Pulau Morotai", "Pulau Taliabu"]
+    },
+    {
+        province: "Papua",
+        cities: ["Jayapura", "Biak Numfor", "Jayapura", "Keerom", "Kepulauan Yapen", "Mamberamo Raya", "Sarmi", "Supiori", "Waropen"]
+    },
+    {
+        province: "Papua Barat",
+        cities: ["Manokwari", "Fakfak", "Kaimana", "Manokwari Selatan", "Pegunungan Arfak", "Teluk Bintuni", "Teluk Wondama"]
+    },
+    {
+        province: "Papua Selatan",
+        cities: ["Merauke", "Asmat", "Boven Digoel", "Mappi"]
+    },
+    {
+        province: "Papua Tengah",
+        cities: ["Nabire", "Deiyai", "Dogiyai", "Intan Jaya", "Mimika", "Paniai", "Puncak", "Puncak Jaya"]
+    },
+    {
+        province: "Papua Pegunungan",
+        cities: ["Jayawijaya", "Lanny Jaya", "Mamberamo Tengah", "Nduga", "Pegunungan Bintang", "Tolikara", "Yahukimo", "Yalimo"]
+    },
+    {
+        province: "Papua Barat Daya",
+        cities: ["Sorong", "Maybrat", "Raja Ampat", "Sorong Selatan", "Tambrauw"]
+    }
+];
 
 const WORKFLOW_STEPS = [
     {
@@ -132,7 +275,96 @@ const WORKFLOW_STEPS = [
     }
 ];
 
-const ALL_TASK_IDS = WORKFLOW_STEPS.flatMap(step => step.tasks.map(t => t.id));
+
+
+
+
+/* ========================================================================
+   2.5. CUSTOM SEARCHABLE CITY SELECT COMPONENT
+   ======================================================================== */
+const CitySelect = ({ value, onChange, label, disabled = false }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const [search, setSearch] = useState("");
+    const dropdownRef = React.useRef(null);
+
+    // Close dropdown on outside click
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+                setIsOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    // Filter cities based on search
+    const filteredData = useMemo(() => {
+        if (!search) return INDONESIAN_CITIES;
+        const lowerSearch = search.toLowerCase();
+        return INDONESIAN_CITIES.map(group => ({
+            province: group.province,
+            cities: group.cities.filter(c => c.toLowerCase().includes(lowerSearch))
+        })).filter(group => group.cities.length > 0);
+    }, [search]);
+
+    return (
+        <div className="relative mb-4" ref={dropdownRef}>
+            <label className="block text-left text-xs font-bold text-slate-400 mb-1 ml-1">{label}</label>
+            <div
+                onClick={() => !disabled && setIsOpen(!isOpen)}
+                className={`w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none flex items-center justify-between cursor-pointer focus:ring-2 focus:ring-indigo-200 transition-all ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white hover:border-indigo-300'}`}
+            >
+                <span className={value ? "text-slate-800 font-medium" : "text-slate-400"}>
+                    {value || "Pilih Kota / Kabupaten..."}
+                </span>
+                <ChevronLeft size={16} className={`transform transition-transform text-slate-400 ${isOpen ? '-rotate-90' : '-rotate-180'}`} />
+            </div>
+
+            {isOpen && (
+                <div className="absolute z-50 top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden animate-[fadeIn_0.2s]">
+                    <div className="p-3 border-b border-slate-100 bg-slate-50 sticky top-0 z-10">
+                        <div className="relative">
+                            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <input
+                                type="text"
+                                autoFocus
+                                className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-200 outline-none focus:border-indigo-500"
+                                placeholder="Cari kota..."
+                                value={search}
+                                onChange={e => setSearch(e.target.value)}
+                            />
+                        </div>
+                    </div>
+                    <div className="max-h-60 overflow-y-auto custom-scrollbar p-2">
+                        {filteredData.length === 0 ? (
+                            <div className="p-4 text-center text-xs text-slate-400 italic">Kota tidak ditemukan.</div>
+                        ) : (
+                            filteredData.map(group => (
+                                <div key={group.province} className="mb-2">
+                                    <div className="px-3 py-1 text-[10px] font-bold text-indigo-500 uppercase tracking-wider bg-indigo-50 rounded-lg mb-1 sticky top-0">
+                                        {group.province}
+                                    </div>
+                                    <div className="grid grid-cols-1">
+                                        {group.cities.map(city => (
+                                            <button
+                                                key={city}
+                                                onClick={() => { onChange(city); setIsOpen(false); setSearch(""); }}
+                                                className={`text-left px-3 py-2 text-xs font-medium rounded-lg transition-colors ${value === city ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:bg-slate-50 hover:text-indigo-600'}`}
+                                            >
+                                                {city}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
 
 /* ========================================================================
    3. API FUNCTIONS
@@ -264,7 +496,12 @@ export default function App() {
     const [view, setView] = useState('landing');
     const [isAuthChecking, setIsAuthChecking] = useState(true);
 
-    // Data Containers
+    // Form States (Auth)
+    const [authEmail, setAuthEmail] = useState('');
+    const [authPassword, setAuthPassword] = useState('');
+    const [authName, setAuthName] = useState(''); // New: Full Name
+    const [authCity, setAuthCity] = useState(''); // New: City
+    const [isRegistering, setIsRegistering] = useState(false);
     const [projects, setProjects] = useState([]);
     const [news, setNews] = useState([]);
     const [assets, setAssets] = useState([]);
@@ -302,9 +539,7 @@ export default function App() {
     const [selectedPendingUser, setSelectedPendingUser] = useState(null);
 
     // Form States
-    const [authEmail, setAuthEmail] = useState('');
-    const [authPassword, setAuthPassword] = useState('');
-    const [isRegistering, setIsRegistering] = useState(false);
+
 
     const [profileForm, setProfileForm] = useState({ username: '', school: '', city: '' });
     const [editProfileData, setEditProfileData] = useState({ displayName: '', bio: '', photoURL: '', school: '', city: '' });
@@ -538,6 +773,18 @@ export default function App() {
         }
     }, [view, usersList]);
 
+    // --- AUTO-FILL PROFILE FORM ---
+    useEffect(() => {
+        if (view === 'profile-setup' && userData) {
+            setProfileForm(prev => ({
+                ...prev,
+                username: userData.displayName || '',
+                city: (userData.city && userData.city !== '-') ? userData.city : '',
+                school: userData.school || ''
+            }));
+        }
+    }, [view, userData]);
+
     // --- HANDLERS ---
     const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); };
     // STRICT SEQUENCE LOCK: Enforce step-by-step progress
@@ -576,8 +823,9 @@ export default function App() {
                 // 1. Create Pending User Doc explicitly
                 await addDoc(collection(db, 'pending_users'), {
                     email: u.email,
-                    displayName: "New Member",
-                    photoURL: `https://ui-avatars.com/api/?name=${u.email}&background=random`,
+                    displayName: authName || "New Member", // Use real name or fallback
+                    city: authCity || "-",
+                    photoURL: `https://ui-avatars.com/api/?name=${encodeURIComponent(authName || u.email)}&background=random`,
                     date: new Date().toLocaleDateString(),
                     uid: u.uid
                 });
@@ -673,7 +921,7 @@ export default function App() {
         if (!selectedPendingUser) return;
         try {
             const newUser = {
-                uid: selectedPendingUser.uid, email: selectedPendingUser.email, displayName: selectedPendingUser.displayName, photoURL: selectedPendingUser.photoURL, role: approvalForm.role, teamId: approvalForm.role === 'creator' ? approvalForm.teamId : (approvalForm.role === 'tim_khusus' ? 'team-5' : null), isProfileComplete: false, nameChangeCount: 0
+                uid: selectedPendingUser.uid, email: selectedPendingUser.email, displayName: selectedPendingUser.displayName, photoURL: selectedPendingUser.photoURL, role: approvalForm.role, teamId: approvalForm.role === 'creator' ? approvalForm.teamId : (approvalForm.role === 'tim_khusus' ? 'team-5' : null), isProfileComplete: false, nameChangeCount: 0, city: selectedPendingUser.city || "-"
             };
             if (!newUser.uid) { showToast("Error: UID Missing", "error"); return; }
 
@@ -875,11 +1123,13 @@ export default function App() {
     };
 
     // --- AUTO-NEWS BOT ---
-    // --- BOT: CAROUSEL HIGHLIGHT (CNN Tech) ---
+    // --- BOT: CAROUSEL HIGHLIGHT (CNN Tech + CORS Proxy) ---
     const handleBotHighlight = async () => {
         setIsAILoading(true);
         try {
-            const res = await fetch('https://berita-indo-api-next.vercel.app/api/cnn-news/teknologi');
+            // Use AllOrigins Proxy to Bypass CORS
+            const targetUrl = 'https://berita-indo-api-next.vercel.app/api/cnn-news/teknologi';
+            const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`);
             if (!res.ok) throw new Error("Gagal mengambil data Bot.");
             const json = await res.json();
             const data = json.data || [];
@@ -902,14 +1152,17 @@ export default function App() {
         }
     };
 
-    // --- BOT: AUTO-NEWS (CNN Tech) ---
+    // --- BOT: AUTO-NEWS (CNN Tech + CORS Proxy) ---
     const generateNewsFromInternet = async () => {
         const confirm = window.confirm("Jalankan Bot Berita Indonesia? (Sumber: CNN Teknologi)");
         if (!confirm) return;
 
         setIsAILoading(true);
         try {
-            const res = await fetch('https://berita-indo-api-next.vercel.app/api/cnn-news/teknologi');
+            // Use AllOrigins Proxy to Bypass CORS
+            const targetUrl = 'https://berita-indo-api-next.vercel.app/api/cnn-news/teknologi';
+            const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`);
+
             if (!res.ok) throw new Error("Gagal mengambil data berita Indonesia.");
 
             const json = await res.json();
@@ -1099,7 +1352,11 @@ export default function App() {
                                 <div className="space-y-5">
                                     <div><label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-2"><User size={14} /> Username / Nama Panggilan</label><input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm font-medium border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-200 transition-all" placeholder="Contoh: Budi Santoso" value={profileForm.username} onChange={e => setProfileForm({ ...profileForm, username: e.target.value })} /></div>
                                     <div><label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-2"><School size={14} /> Asal Sekolah / Universitas</label><input type="text" className="w-full p-4 bg-slate-50 rounded-2xl text-sm font-medium border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-200 transition-all" placeholder="Contoh: SMKN 1 Jakarta" value={profileForm.school} onChange={e => setProfileForm({ ...profileForm, school: e.target.value })} /></div>
-                                    <div><label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-2"><MapPin size={14} /> Asal Kota / Kabupaten</label><select className="w-full p-4 bg-slate-50 rounded-2xl text-sm font-medium border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-200 transition-all appearance-none cursor-pointer" value={profileForm.city} onChange={e => setProfileForm({ ...profileForm, city: e.target.value })}><option value="">-- Pilih Kota --</option>{INDONESIAN_CITIES.map(city => (<option key={city} value={city}>{city}</option>))}</select></div>
+                                    <CitySelect
+                                        label="Asal Kota / Kabupaten"
+                                        value={profileForm.city}
+                                        onChange={(val) => setProfileForm({ ...profileForm, city: val })}
+                                    />
                                     <button onClick={handleProfileSubmit} disabled={!profileForm.username || !profileForm.school || !profileForm.city} className={`w-full py-4 rounded-2xl font-bold shadow-lg transition-all transform hover:scale-[1.02] flex items-center justify-center gap-2 ${(!profileForm.username || !profileForm.school || !profileForm.city) ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-emerald-500 text-white hover:bg-emerald-600'}`}>Simpan & Masuk <ArrowRight size={18} /></button>
                                 </div>
                             </div>
@@ -1262,6 +1519,29 @@ export default function App() {
 
                                 {/* EMAIL PASSWORD FORM */}
                                 <form onSubmit={handleEmailAuth} className="space-y-4">
+                                    {isRegistering && (
+                                        <div className="animate-[fadeIn_0.3s] space-y-4">
+                                            <div>
+                                                <label className="block text-left text-xs font-bold text-slate-400 mb-1 ml-1">Nama Lengkap</label>
+                                                <div className="relative">
+                                                    <input
+                                                        type="text"
+                                                        required
+                                                        className="w-full p-4 pl-12 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none focus:ring-2 focus:ring-indigo-200"
+                                                        placeholder="Siswa Teladan"
+                                                        value={authName}
+                                                        onChange={e => setAuthName(e.target.value)}
+                                                    />
+                                                    <UserCircle className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                                                </div>
+                                            </div>
+                                            <CitySelect
+                                                label="Asal Kota"
+                                                value={authCity}
+                                                onChange={setAuthCity}
+                                            />
+                                        </div>
+                                    )}
                                     <div>
                                         <label className="block text-left text-xs font-bold text-slate-400 mb-1 ml-1">Email</label>
                                         <div className="relative">
@@ -1899,7 +2179,14 @@ export default function App() {
                     {/* FIX: userData bukan user */}
                     <div className="grid grid-cols-2 gap-4">
                         <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Sekolah</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={userData?.school || '-'} /></div>
-                        <div><label className="block text-xs font-bold text-slate-400 mb-1">Asal Kota</label><input type="text" disabled className="w-full p-4 bg-slate-100 rounded-2xl text-sm border border-slate-200 text-slate-500 cursor-not-allowed" value={userData?.city || '-'} /></div>
+                        <div>
+                            {/* Replaced Disabled Input with CitySelect */}
+                            <CitySelect
+                                label="Asal Kota"
+                                value={userData?.city === editProfileData.city ? editProfileData.city || userData?.city : editProfileData.city} // Logic to show edit state
+                                onChange={(val) => setEditProfileData({ ...editProfileData, city: val })}
+                            />
+                        </div>
                     </div>
 
                     {/* FIX: Real Firebase Storage Upload */}
