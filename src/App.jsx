@@ -834,7 +834,25 @@ export default function App() {
     };
     const handleAddAsset = async () => { if (!newAssetForm.title) return; await addDoc(collection(db, 'assets'), { ...newAssetForm, date: new Date().toLocaleDateString() }); setIsAddAssetOpen(false); showToast("Aset Ditambah"); };
     const handleDeleteAsset = (id) => { requestConfirm("Hapus Aset?", "Permanen.", async () => { await deleteDoc(doc(db, 'assets', id)); showToast("Aset Dihapus"); }); };
-    const handleSaveNews = async () => { if (newsForm.id) { await updateDoc(doc(db, 'news', newsForm.id), newsForm); } setIsEditNewsOpen(false); showToast("Berita Update"); };
+    const handleSaveNews = async () => {
+        try {
+            if (newsForm.id) {
+                await updateDoc(doc(db, 'news', newsForm.id), newsForm);
+                showToast("Berita Diupdate");
+            } else {
+                // Handle create case if needed, though usually handled by Bot or separate Create flow
+                await addDoc(collection(db, 'news'), { ...newsForm, date: new Date().toLocaleDateString(), createdAt: new Date().toISOString() });
+                showToast("Berita Dibuat");
+            }
+            setIsEditNewsOpen(false);
+        } catch (e) { showToast("Gagal simpan berita", "error"); }
+    };
+    const handleDeleteNews = async (id) => {
+        requestConfirm("Hapus Berita?", "Jejak digital akan hilang selamanya.", async () => {
+            await deleteDoc(doc(db, 'news', id));
+            showToast("Berita Dihapus");
+        });
+    };
     const handleSaveLogo = async () => { await setDoc(doc(db, 'site_config', 'main'), { logo: logoForm }, { merge: true }); setIsEditLogoOpen(false); showToast("Logo Update"); };
     // --- CAROUSEL HANDLERS ---
     const handleAddSlide = async () => {
@@ -857,34 +875,60 @@ export default function App() {
     };
 
     // --- AUTO-NEWS BOT ---
+    // --- BOT: CAROUSEL HIGHLIGHT (CNN Tech) ---
+    const handleBotHighlight = async () => {
+        setIsAILoading(true);
+        try {
+            const res = await fetch('https://berita-indo-api-next.vercel.app/api/cnn-news/teknologi');
+            if (!res.ok) throw new Error("Gagal mengambil data Bot.");
+            const json = await res.json();
+            const data = json.data || [];
+            if (data.length === 0) throw new Error("Data berita kosong.");
+
+            // Pick Random News
+            const randomNews = data[Math.floor(Math.random() * Math.min(10, data.length))];
+
+            setWeeklyForm({
+                title: randomNews.title,
+                image: randomNews.image?.large || randomNews.image?.small || "",
+                link: randomNews.link || ""
+            });
+            showToast("Bot: Form terisi otomatis! 🤖", "success");
+        } catch (e) {
+            console.error("Bot Highlight Error:", e);
+            showToast("Bot Gagal: " + e.message, "error");
+        } finally {
+            setIsAILoading(false);
+        }
+    };
+
+    // --- BOT: AUTO-NEWS (CNN Tech) ---
     const generateNewsFromInternet = async () => {
-        const confirm = window.confirm("Jalankan Bot Pencari Berita? (Mengambil dari Internet)");
+        const confirm = window.confirm("Jalankan Bot Berita Indonesia? (Sumber: CNN Teknologi)");
         if (!confirm) return;
 
         setIsAILoading(true);
         try {
-            // Fetch Real Tech/Science News (SpaceFlightNews API v4)
-            // v3 is dead (404), migrated to v4
-            const res = await fetch('https://api.spaceflightnewsapi.net/v4/articles/?limit=3');
-            if (!res.ok) throw new Error(`API Error: ${res.status} ${res.statusText}`);
+            const res = await fetch('https://berita-indo-api-next.vercel.app/api/cnn-news/teknologi');
+            if (!res.ok) throw new Error("Gagal mengambil data berita Indonesia.");
 
             const json = await res.json();
-            const data = json.results || []; // v4 returns { results: [...] }
-
+            const data = json.data || [];
+            const limit = 3;
             let addedCount = 0;
 
-            for (const item of data) {
+            for (const item of data.slice(0, limit)) {
                 await addDoc(collection(db, 'news'), {
                     title: item.title,
-                    summary: item.summary ? (item.summary.substring(0, 100) + "...") : "Berita terbaru dari dunia teknologi.",
-                    content: (item.summary || item.title) + "\n\n(Sumber: SpaceFlightNews API)\n" + (item.url ? `Baca selengkapnya: ${item.url}` : ""),
+                    summary: item.contentSnippet ? item.contentSnippet.substring(0, 100) + "..." : "Berita Teknologi Terbaru Indonesia.",
+                    content: (item.contentSnippet || item.title) + "\n\n(Sumber: CNN Indonesia)\n" + (item.link ? `Baca selengkapnya: ${item.link}` : ""),
                     category: "Teknologi",
                     date: new Date().toLocaleDateString(),
                     createdAt: new Date().toISOString()
                 });
                 addedCount++;
             }
-            showToast(`Bot berhasil: ${addedCount} berita masuk! 🚀`, "success");
+            showToast(`Sukses! ${addedCount} Berita Indonesia masuk! 🇮🇩`, "success");
         } catch (e) {
             console.error("Bot Error:", e);
             showToast("Bot Gagal: " + e.message, "error");
@@ -1085,12 +1129,24 @@ export default function App() {
                                 <div className="relative rounded-[2rem] overflow-hidden aspect-video shadow-inner bg-slate-200">
                                     {weeklyHighlights.length > 0 ? (
                                         <>
-                                            <img
-                                                key={currentSlide}
-                                                src={weeklyHighlights[currentSlide]?.image || "https://images.unsplash.com/photo-1522071820081-009f0129c71c"}
-                                                className="w-full h-full object-cover transition-transform duration-700 animate-[fadeIn_0.5s]"
-                                                alt="Highlight"
-                                            />
+                                            {weeklyHighlights[currentSlide]?.link ? (
+                                                <a href={weeklyHighlights[currentSlide].link} target="_blank" rel="noopener noreferrer" className="block w-full h-full relative cursor-pointer group/link">
+                                                    <img
+                                                        key={currentSlide}
+                                                        src={weeklyHighlights[currentSlide]?.image || "https://images.unsplash.com/photo-1522071820081-009f0129c71c"}
+                                                        className="w-full h-full object-cover transition-transform duration-700 animate-[fadeIn_0.5s]"
+                                                        alt="Highlight"
+                                                    />
+                                                    <div className="absolute top-4 right-4 bg-white/20 backdrop-blur p-2 rounded-full text-white opacity-0 group-hover/link:opacity-100 transition-opacity"><ArrowRight size={20} /></div>
+                                                </a>
+                                            ) : (
+                                                <img
+                                                    key={currentSlide}
+                                                    src={weeklyHighlights[currentSlide]?.image || "https://images.unsplash.com/photo-1522071820081-009f0129c71c"}
+                                                    className="w-full h-full object-cover transition-transform duration-700 animate-[fadeIn_0.5s]"
+                                                    alt="Highlight"
+                                                />
+                                            )}
                                             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent p-6 md:p-10 flex flex-col justify-end text-white">
                                                 <span className="self-start bg-pink-500/90 backdrop-blur-sm text-white px-3 py-1 rounded-lg text-[10px] font-bold uppercase mb-2 shadow-lg tracking-wider">Weekly Highlight</span>
                                                 <h2 className="text-2xl md:text-4xl font-bold leading-tight drop-shadow-md">{weeklyHighlights[currentSlide]?.title}</h2>
@@ -1141,7 +1197,10 @@ export default function App() {
                                     <div key={n.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-xl hover:border-indigo-100 transition-all group relative overflow-hidden flex flex-col h-full">
                                         <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-50 rounded-bl-[4rem] -mr-4 -mt-4 transition-all group-hover:bg-indigo-100"></div>
                                         {(userData?.role === 'supervisor' || userData?.role === 'super_admin') && (
-                                            <button onClick={() => handleEditNewsUI(n)} className="absolute top-4 right-4 z-20 p-2 bg-white rounded-full shadow-sm text-indigo-600 hover:scale-110 transition-transform"><Edit3 size={14} /></button>
+                                            <div className="absolute top-4 right-4 z-20 flex gap-1">
+                                                <button onClick={() => handleDeleteNews(n.id)} className="p-2 bg-white/90 rounded-full shadow-sm text-red-500 hover:scale-110 transition-transform"><Trash2 size={14} /></button>
+                                                <button onClick={() => handleEditNewsUI(n)} className="p-2 bg-white/90 rounded-full shadow-sm text-indigo-600 hover:scale-110 transition-transform"><Edit3 size={14} /></button>
+                                            </div>
                                         )}
                                         <div className="relative z-10 flex-1 flex flex-col">
                                             <div className="flex justify-between items-start mb-4">
@@ -1817,7 +1876,12 @@ export default function App() {
                                     {weeklyForm.image && <img src={weeklyForm.image} className="w-10 h-10 rounded-lg object-cover border border-slate-200" />}
                                 </div>
                             </div>
-                            <button onClick={handleAddSlide} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold transition-all shadow-lg flex items-center justify-center gap-2 text-sm hover:scale-105 transform"><Plus size={16} /> Tambah ke Carousel</button>
+                            <div><label className="block text-xs font-bold text-slate-500 mb-1">Link Berita (Opsional)</label><input type="text" className="w-full p-3 bg-slate-50 rounded-xl text-xs border border-slate-200 outline-none focus:border-indigo-500" value={weeklyForm.link || ''} onChange={e => setWeeklyForm({ ...weeklyForm, link: e.target.value })} placeholder="https://berita..." /></div>
+
+                            <div className="flex gap-2">
+                                <button onClick={handleBotHighlight} className="flex-1 py-3 bg-indigo-100 text-indigo-700 rounded-xl font-bold transition-all shadow-sm flex items-center justify-center gap-2 text-xs hover:bg-indigo-200"><Bot size={16} /> Auto-Fill Bot</button>
+                                <button onClick={handleAddSlide} className="flex-[2] py-3 bg-indigo-600 text-white rounded-xl font-bold transition-all shadow-lg flex items-center justify-center gap-2 text-sm hover:scale-105 transform"><Plus size={16} /> Tambah Slide</button>
+                            </div>
                         </div>
                     </div>
                 </div>
