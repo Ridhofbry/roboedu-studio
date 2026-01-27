@@ -336,7 +336,7 @@ const CitySelect = ({ value, onChange, label, disabled = false }) => {
                             />
                         </div>
                     </div>
-                    <div className="max-h-60 overflow-y-auto custom-scrollbar p-2">
+                    <div className="max-h-60 md:max-h-80 overflow-y-auto custom-scrollbar p-2 overscroll-contain touch-pan-y">
                         {filteredData.length === 0 ? (
                             <div className="p-4 text-center text-xs text-slate-400 italic">Kota tidak ditemukan.</div>
                         ) : (
@@ -931,6 +931,7 @@ export default function App() {
         } catch (e) { showToast("Gagal Approve", "error"); }
     };
     const handleRejectUser = (u) => { requestConfirm("Tolak?", "Hapus user.", async () => { await deleteDoc(doc(db, 'pending_users', u.id)); showToast("Ditolak."); }); };
+    const handleDeleteRegisteredUser = (u) => { requestConfirm("Hapus User?", "User akan dihapus permanen dari database.", async () => { await deleteDoc(doc(db, 'users', u.uid)); showToast("User Dihapus."); }); };
 
     // PROJECTS
     const handleAddProject = async () => {
@@ -1342,7 +1343,7 @@ export default function App() {
                     {/* VIEW: PROFILE SETUP */}
                     {view === 'profile-setup' && (
                         <div className="pt-20 flex justify-center animate-[slideUp_0.4s_ease-out]">
-                            <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-lg border border-slate-100 relative overflow-hidden">
+                            <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl w-full max-w-lg border border-slate-100 relative">
                                 <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-indigo-500 to-purple-500"></div>
                                 <div className="text-center mb-8">
                                     <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center mx-auto mb-4 text-indigo-600 shadow-sm"><UserPlus size={32} /></div>
@@ -1620,9 +1621,11 @@ export default function App() {
                                     <h3 className="font-bold text-lg mb-4 flex items-center gap-2 text-slate-700"><Users size={20} /> User Terdaftar ({usersList.length})</h3>
                                     <div className="space-y-3 max-h-96 overflow-y-auto custom-scrollbar">
                                         {usersList.slice(0, 10).map((u, idx) => (
-                                            <div key={idx} className="flex items-center gap-3 p-3 hover:bg-slate-50 rounded-xl transition-colors">
+                                            <div key={idx} className="flex items-center gap-3 p-3 hover:bg-slate-50 rounded-xl transition-colors group">
                                                 <img src={u.photoURL} className="w-8 h-8 rounded-full bg-slate-200" />
                                                 <div className="flex-1"><div className="font-bold text-sm text-slate-800">{u.displayName}</div><div className="text-[10px] uppercase font-bold text-indigo-500">{u.role}</div></div>
+                                                {/* Delete Button */}
+                                                <button onClick={() => handleDeleteRegisteredUser(u)} className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"><Trash2 size={16} /></button>
                                             </div>
                                         ))}
                                     </div>
