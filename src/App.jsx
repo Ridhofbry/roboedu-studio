@@ -286,7 +286,8 @@ const ALL_TASK_IDS = WORKFLOW_STEPS.flatMap(s => s.tasks.map(t => t.id));
 /* ========================================================================
    2.5. CUSTOM SEARCHABLE CITY SELECT COMPONENT
    ======================================================================== */
-const CitySelect = ({ value, onChange, label, disabled = false }) => {
+const CitySelect = ({ value, onChange, label, disabled }) => {
+    const isDisabled = disabled || false;
     const [isOpen, setIsOpen] = useState(false);
     const [search, setSearch] = useState("");
     const dropdownRef = React.useRef(null);
@@ -316,8 +317,8 @@ const CitySelect = ({ value, onChange, label, disabled = false }) => {
         <div className="relative mb-4" ref={dropdownRef}>
             <label className="block text-left text-xs font-bold text-slate-400 mb-1 ml-1">{label}</label>
             <div
-                onClick={() => !disabled && setIsOpen(!isOpen)}
-                className={`w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none flex items-center justify-between cursor-pointer focus:ring-2 focus:ring-indigo-200 transition-all ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white hover:border-indigo-300'}`}
+                onClick={() => !isDisabled && setIsOpen(!isOpen)}
+                className={`w-full p-4 bg-slate-50 rounded-2xl text-sm border border-slate-200 outline-none flex items-center justify-between cursor-pointer focus:ring-2 focus:ring-indigo-200 transition-all ${isDisabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white hover:border-indigo-300'}`}
             >
                 <span className={value ? "text-slate-800 font-medium" : "text-slate-400"}>
                     {value || "Pilih Kota / Kabupaten..."}
@@ -570,6 +571,13 @@ export default function App() {
     const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', action: null, type: 'neutral' });
     const [isConfirming, setIsConfirming] = useState(false); // Fix: Prevent double execution
     const [isAILoading, setIsAILoading] = useState(false);
+
+    // Report Generation States
+    const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+    const [reportTeamId, setReportTeamId] = useState(null);
+    const [reportMonth, setReportMonth] = useState(new Date().getMonth());
+    const [reportYear, setReportYear] = useState(new Date().getFullYear());
+    const [isGeneratingReport, setIsGeneratingReport] = useState(false);
 
     // --- HELPERS ---
     const calculateProgress = (tasks) => {
@@ -1183,6 +1191,177 @@ export default function App() {
         }
     };
 
+    // MONTHLY REPORT GENERATION
+    const generateMonthlyReport = async (teamId, month, year) => {
+        if (!window.jspdf || !window.jspdf.jsPDF) {
+            return showToast("Library jsPDF belum termuat. Refresh halaman.", "error");
+        }
+
+        setIsGeneratingReport(true);
+
+        try {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+
+            // Get team data
+            const teamName = teamId === 'team1' ? 'Tim 1' :
+                teamId === 'team2' ? 'Tim 2' :
+                    teamId === 'team_khusus' ? 'Tim Khusus' : 'Unknown';
+
+            // Get team members
+            const teamMembers = users.filter(u => u.teamId === teamId);
+
+            // Filter projects by team and completion date
+            const monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+                'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+
+            const completedProjects = projects.filter(p => {
+                if (p.teamId !== teamId || !p.completedAt) return false;
+
+                const completedDate = new Date(p.completedAt);
+                return completedDate.getMonth() === month && completedDate.getFullYear() === year;
+            });
+
+            // Calculate statistics
+            const totalProjects = completedProjects.length;
+            const onTimeProjects = completedProjects.filter(p => !p.late).length;
+            const lateProjects = completedProjects.filter(p => p.late).length;
+            const onTimePercentage = totalProjects > 0 ? Math.round((onTimeProjects / totalProjects) * 100) : 0;
+
+            const activeProjects = projects.filter(p => p.teamId === teamId && !p.archived && !p.completedAt);
+
+            // PDF Content
+            let yPos = 20;
+
+            // Header
+            doc.setFontSize(20);
+            doc.setFont(undefined, 'bold');
+            doc.text('LAPORAN KINERJA BULANAN', 105, yPos, { align: 'center' });
+            yPos += 10;
+            doc.setFontSize(14);
+            doc.text(`${teamName} - ${monthNames[month]} ${year}`, 105, yPos, { align: 'center' });
+            yPos += 15;
+
+            // Separator line
+            doc.setDrawColor(200, 200, 200);
+            doc.line(20, yPos, 190, yPos);
+            yPos += 10;
+
+            // Team Information
+            doc.setFontSize(12);
+            doc.setFont(undefined, 'bold');
+            doc.text('Informasi Tim:', 20, yPos);
+            yPos += 7;
+            doc.setFont(undefined, 'normal');
+            doc.setFontSize(10);
+            doc.text(`Nama Tim: ${teamName}`, 25, yPos);
+            yPos += 6;
+            doc.text('Anggota:', 25, yPos);
+            yPos += 5;
+
+            if (teamMembers.length > 0) {
+                teamMembers.forEach(member => {
+                    doc.text(`  - ${member.displayName} (${member.role || 'Creator'})`, 30, yPos);
+                    yPos += 5;
+                });
+            } else {
+                doc.text('  - Tidak ada anggota terdaftar', 30, yPos);
+                yPos += 5;
+            }
+
+            yPos += 5;
+
+            // Performance Summary
+            doc.setFontSize(12);
+            doc.setFont(undefined, 'bold');
+            doc.text('Ringkasan Kinerja:', 20, yPos);
+            yPos += 7;
+            doc.setFontSize(10);
+            doc.setFont(undefined, 'normal');
+            doc.text(`Total Project Selesai: ${totalProjects}`, 25, yPos);
+            yPos += 6;
+            doc.text(`Selesai Tepat Waktu: ${onTimeProjects} (${onTimePercentage}%)`, 25, yPos);
+            yPos += 6;
+            doc.text(`Terlambat: ${lateProjects} (${totalProjects - onTimePercentage}%)`, 25, yPos);
+            yPos += 6;
+            doc.text(`Project Aktif (Belum Selesai): ${activeProjects.length}`, 25, yPos);
+            yPos += 10;
+
+            // Separator line
+            doc.line(20, yPos, 190, yPos);
+            yPos += 10;
+
+            // Project List
+            doc.setFontSize(12);
+            doc.setFont(undefined, 'bold');
+            doc.text('Daftar Project Selesai:', 20, yPos);
+            yPos += 7;
+
+            if (completedProjects.length > 0) {
+                completedProjects.forEach((p, index) => {
+                    // Check page break
+                    if (yPos > 270) {
+                        doc.addPage();
+                        yPos = 20;
+                    }
+
+                    doc.setFontSize(10);
+                    doc.setFont(undefined, 'bold');
+                    doc.text(`${index + 1}. ${p.title}`, 25, yPos);
+                    yPos += 6;
+                    doc.setFont(undefined, 'normal');
+                    doc.text(`   Status: Selesai`, 25, yPos);
+                    yPos += 5;
+
+                    if (p.completedAt) {
+                        const completedDate = new Date(p.completedAt);
+                        const formattedDate = completedDate.toLocaleDateString('id-ID', {
+                            day: '2-digit',
+                            month: 'long',
+                            year: 'numeric'
+                        });
+                        doc.text(`   Tanggal Selesai: ${formattedDate}`, 25, yPos);
+                        yPos += 5;
+                    }
+
+                    doc.text(`   Evaluasi: ${p.late ? '✗ Terlambat' : '✓ Tepat Waktu'}`, 25, yPos);
+                    yPos += 8;
+                });
+            } else {
+                doc.setFontSize(10);
+                doc.setFont(undefined, 'italic');
+                doc.text('Tidak ada project yang diselesaikan pada bulan ini.', 25, yPos);
+                yPos += 10;
+            }
+
+            // Footer
+            yPos = 280;
+            doc.setFontSize(8);
+            doc.setFont(undefined, 'italic');
+            doc.setTextColor(150, 150, 150);
+            const generatedDate = new Date().toLocaleString('id-ID', {
+                day: '2-digit',
+                month: 'long',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            doc.text(`Laporan dibuat otomatis pada: ${generatedDate}`, 105, yPos, { align: 'center' });
+
+            // Save PDF
+            const fileName = `Laporan_${teamName.replace(' ', '_')}_${monthNames[month]}_${year}.pdf`;
+            doc.save(fileName);
+
+            showToast(`✅ Laporan berhasil diunduh: ${fileName}`, "success");
+        } catch (error) {
+            console.error("Report generation error:", error);
+            showToast("❌ Gagal membuat laporan. Cek console.", "error");
+        } finally {
+            setIsGeneratingReport(false);
+            setIsReportModalOpen(false);
+        }
+    };
+
     const handleRePropose = () => {
         handleUpdateProjectFirestore(activeProject.id, { proposalStatus: 'Pending' });
         sendOneSignalNotification('supervisor', `Pengajuan ULANG: "${activeProject.title}"`, 'Tim 5');
@@ -1778,7 +1957,20 @@ export default function App() {
                                                 <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-white font-bold shadow-md text-xl ${team.isSpecial ? 'bg-gradient-to-br from-amber-400 to-orange-500' : 'bg-gradient-to-br from-indigo-500 to-blue-600'}`}>{team.isSpecial ? <Lock size={24} /> : team.name.split(' ')[1]}</div>
                                                 <div className="flex-1"><h3 className="font-black text-slate-800 text-xl group-hover:text-indigo-600 transition-colors">{team.name}</h3></div>
                                             </div>
-                                            <div className="inline-block px-3 py-1 rounded-lg text-xs font-bold border bg-white">{count} Project Aktif</div>
+                                            <div className="flex items-center gap-2">
+                                                <div className="inline-block px-3 py-1 rounded-lg text-xs font-bold border bg-white flex-1">{count} Project Aktif</div>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setReportTeamId(team.id);
+                                                        setIsReportModalOpen(true);
+                                                    }}
+                                                    className="p-2 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition-colors"
+                                                    title="Download Laporan Bulanan"
+                                                >
+                                                    <Download size={16} />
+                                                </button>
+                                            </div>
                                         </div>
                                     );
                                 })}
@@ -1804,11 +1996,34 @@ export default function App() {
                                 </h2>
                                 <div className="flex gap-2">
                                     {(userData?.role === 'supervisor' || userData?.role === 'super_admin') && activeTeamId && (
-                                        <button onClick={() => {
-                                            const tm = TEAMS.find(t => t.id === activeTeamId);
-                                            setNewProjectForm({ ...newProjectForm, teamId: tm.id, isBigProject: tm.isSpecial });
-                                            setIsAddProjectOpen(true);
-                                        }} className="bg-slate-900 text-white px-4 py-2 rounded-full font-bold text-xs shadow-lg flex items-center gap-2"><Plus size={14} /> Project Baru</button>
+                                        <>
+                                            <button onClick={() => {
+                                                const tm = TEAMS.find(t => t.id === activeTeamId);
+                                                setNewProjectForm({ ...newProjectForm, teamId: tm.id, isBigProject: tm.isSpecial });
+                                                setIsAddProjectOpen(true);
+                                            }} className="bg-slate-900 text-white px-4 py-2 rounded-full font-bold text-xs shadow-lg flex items-center gap-2"><Plus size={14} /> Project Baru</button>
+                                            <button
+                                                onClick={() => {
+                                                    setReportTeamId(activeTeamId);
+                                                    setIsReportModalOpen(true);
+                                                }}
+                                                className="bg-indigo-600 text-white px-4 py-2 rounded-full font-bold text-xs shadow-lg flex items-center gap-2 hover:bg-indigo-700"
+                                            >
+                                                <Download size={14} /> Laporan Bulanan
+                                            </button>
+                                        </>
+                                    )}
+                                    {/* Creator can also download their own team's report */}
+                                    {(userData?.role === 'creator' || userData?.role === 'tim_khusus') && (
+                                        <button
+                                            onClick={() => {
+                                                setReportTeamId(userData.teamId);
+                                                setIsReportModalOpen(true);
+                                            }}
+                                            className="bg-indigo-600 text-white px-4 py-2 rounded-full font-bold text-xs shadow-lg flex items-center gap-2 hover:bg-indigo-700"
+                                        >
+                                            <Download size={14} /> Laporan Bulanan
+                                        </button>
                                     )}
                                     {/* CREATOR ARCHIVE BUTTON IN DASHBOARD */}
                                     {(userData?.role === 'creator' || userData?.role === 'tim_khusus') && (
@@ -2461,6 +2676,57 @@ export default function App() {
                         <div className="text-xs text-slate-400 font-bold text-right">Diposting: {selectedNews.date}</div>
                     </div>
                 )}
+            </Modal>
+
+            {/* --- MONTHLY REPORT MODAL --- */}
+            <Modal isOpen={isReportModalOpen} onClose={() => setIsReportModalOpen(false)} title="Download Laporan Bulanan">
+                <div className="space-y-6">
+                    <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
+                        <p className="text-sm text-blue-800 font-medium">
+                            📊 Pilih bulan dan tahun untuk generate laporan kinerja tim dalam format PDF.
+                        </p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-2">Bulan</label>
+                            <select
+                                value={reportMonth}
+                                onChange={(e) => setReportMonth(parseInt(e.target.value))}
+                                className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 outline-none text-sm"
+                            >
+                                {['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'].map((month, idx) => (
+                                    <option key={idx} value={idx}>{month}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-2">Tahun</label>
+                            <select
+                                value={reportYear}
+                                onChange={(e) => setReportYear(parseInt(e.target.value))}
+                                className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 outline-none text-sm"
+                            >
+                                {[2024, 2025, 2026].map(year => (
+                                    <option key={year} value={year}>{year}</option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+
+                    <button
+                        onClick={() => generateMonthlyReport(reportTeamId, reportMonth, reportYear)}
+                        disabled={isGeneratingReport}
+                        className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-indigo-700"
+                    >
+                        {isGeneratingReport ? (
+                            <><Loader2 size={18} className="animate-spin" /> Generating PDF...</>
+                        ) : (
+                            <><Download size={18} /> Download Laporan</>
+                        )}
+                    </button>
+                </div>
             </Modal>
 
         </div >
