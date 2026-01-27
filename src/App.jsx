@@ -771,12 +771,18 @@ export default function App() {
         }
     }, []);
 
-    // OneSignal Initialization (SDK v16)
+    // OneSignal Initialization (Hybrid: Web + Median.co)
     useEffect(() => {
-        if (!ONESIGNAL_APP_ID) {
-            console.warn('OneSignal App ID not configured');
+        // Detect if running in Median App
+        const isMedianApp = window.navigator.userAgent.includes('wv') || window.navigator.userAgent.includes('Median');
+
+        if (isMedianApp) {
+            console.log('📱 Running in Median App - Skipping web init');
+            // Median app handles init natively
             return;
         }
+
+        if (!ONESIGNAL_APP_ID) return;
 
         window.OneSignalDeferred = window.OneSignalDeferred || [];
         OneSignalDeferred.push(async function (OneSignal) {
@@ -785,34 +791,46 @@ export default function App() {
                 allowLocalhostAsSecureOrigin: true,
             });
 
-            // Request notification permission
             try {
                 await OneSignal.Notifications.requestPermission();
-                console.log('✅ OneSignal initialized successfully');
+                console.log('✅ OneSignal Web initialized');
             } catch (error) {
-                console.log('⚠️ Notification permission denied or already handled:', error);
+                console.log('⚠️ Permission error:', error);
             }
         });
     }, []);
 
-    // Tag user with role after login (SDK v16)
+    // Tag user (Support Web & Median)
     useEffect(() => {
-        if (!userData || !ONESIGNAL_APP_ID) return;
+        if (!userData) return;
 
-        window.OneSignalDeferred = window.OneSignalDeferred || [];
-        OneSignalDeferred.push(async function (OneSignal) {
-            try {
-                // SDK v16: Use User.addTag() instead of sendTag()
-                if (userData.role) await OneSignal.User.addTag('role', userData.role);
-                if (userData.teamId) await OneSignal.User.addTag('teamId', userData.teamId);
-                console.log('✅ OneSignal tagged:',
-                    userData.role || '(no-role)',
-                    userData.teamId || '(no-team)'
-                );
-            } catch (error) {
-                console.error('❌ Failed to tag user:', error);
+        const tagUser = async () => {
+            const tags = {};
+            if (userData.role) tags.role = userData.role;
+            if (userData.teamId) tags.teamId = userData.teamId;
+
+            // 1. Try Median Bridge (Native App)
+            if (window.median && window.median.onesignal) {
+                console.log('📱 Tagging via Median Bridge');
+                window.median.onesignal.sendTags(tags);
+                return;
             }
-        });
+
+            // 2. Try Web SDK
+            if (ONESIGNAL_APP_ID && window.OneSignalDeferred) {
+                window.OneSignalDeferred.push(async function (OneSignal) {
+                    try {
+                        if (tags.role) await OneSignal.User.addTag('role', tags.role);
+                        if (tags.teamId) await OneSignal.User.addTag('teamId', tags.teamId);
+                        console.log('✅ OneSignal Web tagged:', tags);
+                    } catch (e) {
+                        console.error('❌ Web Tagging failed', e);
+                    }
+                });
+            }
+        };
+
+        tagUser();
     }, [userData]);
 
     const handleEmailVerificationLink = async (code) => {
