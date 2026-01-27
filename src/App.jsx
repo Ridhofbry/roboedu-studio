@@ -830,8 +830,8 @@ export default function App() {
         OneSignalDeferred.push(async function (OneSignal) {
             try {
                 // SDK v16: Use User.addTag() instead of sendTag()
-                await OneSignal.User.addTag('role', userData.role);
-                await OneSignal.User.addTag('teamId', userData.teamId);
+                if (userData.role) await OneSignal.User.addTag('role', userData.role);
+                if (userData.teamId) await OneSignal.User.addTag('teamId', userData.teamId);
                 console.log('✅ OneSignal tagged:', userData.role, userData.teamId);
             } catch (error) {
                 console.error('❌ Failed to tag user:', error);
