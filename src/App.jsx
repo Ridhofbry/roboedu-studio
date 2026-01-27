@@ -374,36 +374,7 @@ const CitySelect = ({ value, onChange, label, disabled = false }) => {
    3. API FUNCTIONS
    ======================================================================== */
 
-const sendOneSignalNotification = async (targetRole, message, teamName) => {
 
-    try {
-        // Call serverless function instead of OneSignal API directly
-        // This avoids CORS issues and keeps REST API Key secure
-        const response = await fetch('/api/send-notification', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                targetRole,
-                message,
-                teamName
-            })
-        });
-
-        const data = await response.json();
-
-        if (response.ok) {
-            console.log('✅ Notification sent:', message);
-        } else {
-            // Stringify error object for readable console logs
-            console.error('❌ Notification failed:', JSON.stringify(data, null, 2));
-            showToast(`Gagal kirim notif: ${data.error || 'Server Error'}`, 'error');
-        }
-    } catch (err) {
-        console.error('❌ Notification error:', err);
-    }
-};
 
 const generateAIScript = async (prompt) => {
     if (!genAI) return "Error: API Key Gemini Missing";
@@ -907,6 +878,27 @@ export default function App() {
 
     // --- HANDLERS ---
     const showToast = (msg, type = 'success') => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); };
+
+    const sendOneSignalNotification = async (targetRole, message, teamName) => {
+        try {
+            // Call serverless function instead of OneSignal API directly
+            // This avoids CORS issues and keeps REST API Key secure
+            const response = await fetch('/api/send-notification', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ targetRole, message, teamName })
+            });
+            const data = await response.json();
+            if (response.ok) {
+                console.log('✅ Notification sent:', message);
+            } else {
+                console.error('❌ Notification failed:', JSON.stringify(data, null, 2));
+                showToast(`Gagal kirim notif: ${data.error || 'Server Error'}`, 'error');
+            }
+        } catch (err) {
+            console.error('❌ Notification error:', err);
+        }
+    };
     // STRICT SEQUENCE LOCK: Enforce step-by-step progress
     const isTaskLocked = (taskId, completedTasks) => {
         const idx = ALL_TASK_IDS.indexOf(taskId);
