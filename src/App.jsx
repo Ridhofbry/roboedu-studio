@@ -21,7 +21,8 @@ import {
     onAuthStateChanged,
     setPersistence,
     browserLocalPersistence,
-    sendEmailVerification
+    sendEmailVerification,
+    applyActionCode
 } from "firebase/auth";
 import {
     getFirestore, doc, setDoc, getDoc, updateDoc, deleteDoc,
@@ -758,6 +759,37 @@ export default function App() {
 
         return () => { unsubProj(); unsubAssets(); };
     }, [user]);
+
+    // --- EMAIL VERIFICATION LINK HANDLER ---
+    useEffect(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const mode = urlParams.get('mode');
+        const oobCode = urlParams.get('oobCode');
+
+        if (mode === 'verifyEmail' && oobCode) {
+            handleEmailVerificationLink(oobCode);
+            // Clean URL after processing
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+    }, []);
+
+    const handleEmailVerificationLink = async (code) => {
+        try {
+            await applyActionCode(auth, code);
+            showToast("✅ Email berhasil diverifikasi! Silakan login untuk melanjutkan.", "success");
+            setView('landing');
+        } catch (error) {
+            console.error("Email verification error:", error);
+            let errorMsg = "Link verifikasi tidak valid atau sudah kadaluarsa.";
+            if (error.code === 'auth/invalid-action-code') {
+                errorMsg = "Link verifikasi sudah digunakan atau tidak valid.";
+            } else if (error.code === 'auth/expired-action-code') {
+                errorMsg = "Link verifikasi sudah kadaluarsa. Silakan request email baru.";
+            }
+            showToast(errorMsg, "error");
+            setView('landing');
+        }
+    };
 
     // --- AUTO-SYNC ACTIVE PROJECT ---
     // Fixes issue where checklist updates don't show immediately
