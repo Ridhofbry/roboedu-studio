@@ -863,28 +863,31 @@ export default function App() {
 
         setIsAILoading(true);
         try {
-            // Fetch Real Tech/Science News (SpaceFlightNews is free, open, and reliable)
-            const res = await fetch('https://api.spaceflightnewsapi.net/v3/articles?_limit=3');
-            if (!res.ok) throw new Error("Gagal mengambil data dari internet.");
+            // Fetch Real Tech/Science News (SpaceFlightNews API v4)
+            // v3 is dead (404), migrated to v4
+            const res = await fetch('https://api.spaceflightnewsapi.net/v4/articles/?limit=3');
+            if (!res.ok) throw new Error(`API Error: ${res.status} ${res.statusText}`);
 
-            const data = await res.json();
+            const json = await res.json();
+            const data = json.results || []; // v4 returns { results: [...] }
+
             let addedCount = 0;
 
             for (const item of data) {
                 await addDoc(collection(db, 'news'), {
                     title: item.title,
-                    summary: item.summary.substring(0, 80) + "...",
-                    content: item.summary + "\n\n(Berita Otomatis dari Bot)",
+                    summary: item.summary ? (item.summary.substring(0, 100) + "...") : "Berita terbaru dari dunia teknologi.",
+                    content: (item.summary || item.title) + "\n\n(Sumber: SpaceFlightNews API)\n" + (item.url ? `Baca selengkapnya: ${item.url}` : ""),
                     category: "Teknologi",
                     date: new Date().toLocaleDateString(),
-                    createdAt: new Date().toISOString() // Helper for sorting
+                    createdAt: new Date().toISOString()
                 });
                 addedCount++;
             }
-            showToast(`Bot berhasil menambahkan ${addedCount} berita baru! 🤖`, "success");
+            showToast(`Bot berhasil: ${addedCount} berita masuk! 🚀`, "success");
         } catch (e) {
             console.error("Bot Error:", e);
-            showToast("Bot Error: " + e.message, "error");
+            showToast("Bot Gagal: " + e.message, "error");
         } finally {
             setIsAILoading(false);
         }
