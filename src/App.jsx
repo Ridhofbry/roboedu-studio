@@ -375,14 +375,43 @@ const CitySelect = ({ value, onChange, label, disabled = false }) => {
    ======================================================================== */
 
 const sendOneSignalNotification = async (targetRole, message, teamName) => {
-    if (!ONESIGNAL_APP_ID || !ONESIGNAL_API_KEY) return;
-    const heading = targetRole === 'supervisor' ? `Laporan: ${teamName}` : `Update: ${teamName}`;
+    if (!ONESIGNAL_APP_ID || !ONESIGNAL_API_KEY) {
+        console.warn('OneSignal not configured');
+        return;
+    }
+
+    const heading = targetRole === 'supervisor'
+        ? `📋 Laporan: ${teamName}`
+        : `🔔 Update: ${teamName}`;
+
     const options = {
         method: 'POST',
-        headers: { accept: 'application/json', 'content-type': 'application/json', Authorization: `Basic ${ONESIGNAL_API_KEY}` },
-        body: JSON.stringify({ app_id: ONESIGNAL_APP_ID, included_segments: ["All"], contents: { en: message }, headings: { en: heading } })
+        headers: {
+            'accept': 'application/json',
+            'content-type': 'application/json',
+            'Authorization': `Basic ${ONESIGNAL_API_KEY}`
+        },
+        body: JSON.stringify({
+            app_id: ONESIGNAL_APP_ID,
+            headings: { en: heading },
+            contents: { en: message },
+            // Filter by role tag
+            filters: [
+                { field: 'tag', key: 'role', relation: '=', value: targetRole }
+            ]
+        })
     };
-    try { await fetch('https://onesignal.com/api/v1/notifications', options); } catch (err) { console.error("Gagal kirim notif", err); }
+
+    try {
+        const response = await fetch('https://onesignal.com/api/v1/notifications', options);
+        if (response.ok) {
+            console.log('✅ Notification sent:', message);
+        } else {
+            console.error('❌ Notification failed:', await response.text());
+        }
+    } catch (err) {
+        console.error('❌ Notification error:', err);
+    }
 };
 
 const generateAIScript = async (prompt) => {
@@ -779,6 +808,36 @@ export default function App() {
             window.history.replaceState({}, document.title, window.location.pathname);
         }
     }, []);
+
+    // OneSignal Initialization
+    useEffect(() => {
+        if (!ONESIGNAL_APP_ID) return;
+
+        window.OneSignal = window.OneSignal || [];
+        window.OneSignal.push(function () {
+            window.OneSignal.init({
+                appId: ONESIGNAL_APP_ID,
+                notifyButton: {
+                    enable: false, // Disable default button
+                },
+                allowLocalhostAsSecureOrigin: true, // For local testing
+            });
+
+            // Auto-prompt for permission on first visit
+            window.OneSignal.showSlidedownPrompt();
+        });
+    }, []);
+
+    // Tag user with role after login
+    useEffect(() => {
+        if (userData && window.OneSignal) {
+            window.OneSignal.push(function () {
+                window.OneSignal.sendTag('role', userData.role);
+                window.OneSignal.sendTag('teamId', userData.teamId);
+                console.log('✅ OneSignal tagged:', userData.role, userData.teamId);
+            });
+        }
+    }, [userData]);
 
     const handleEmailVerificationLink = async (code) => {
         try {
