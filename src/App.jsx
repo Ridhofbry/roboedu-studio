@@ -1627,7 +1627,7 @@ export default function App() {
                     {/* User Management */}
                     {view === 'user-management' && userData?.role === 'super_admin' && (
                         <div className="pt-20 animate-[fadeIn_0.3s]">
-                            <div className="flex items-center gap-2 mb-6"><button onClick={() => setView('dashboard')} className="p-2 bg-white rounded-full hover:bg-slate-100"><ChevronLeft /></button><h2 className="text-3xl font-black text-slate-800">Manajemen Akses</h2></div>
+                            <div className="flex items-center gap-2 mb-6"><button onClick={() => setView('team-list')} className="p-2 bg-white rounded-full hover:bg-slate-100"><ChevronLeft /></button><h2 className="text-3xl font-black text-slate-800">Manajemen Akses</h2></div>
                             <div className="grid md:grid-cols-2 gap-8">
                                 <div className="bg-white p-6 rounded-[2rem] border border-orange-100 shadow-lg relative overflow-hidden">
                                     <div className="absolute top-0 left-0 w-full h-1 bg-orange-400"></div>
